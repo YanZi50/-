@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>信息流素材一键拼接</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --line: #e2e8f0;
+      --text: #172033;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+    .page { max-width: 980px; margin: 0 auto; padding: 24px 18px 48px; }
+    h1 { font-size: 26px; margin: 0 0 6px; }
+    .subtitle { color: var(--muted); margin: 0 0 20px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+    }
+    .card h2 { margin: 0 0 12px; font-size: 17px; }
+    .row { display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: center; margin: 9px 0; }
+    .row.plain { grid-template-columns: 160px 1fr; }
+    label { color: #334155; }
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      background: #fff;
+      color: var(--text);
+    }
+    input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 14px;
+      background: var(--accent);
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button:hover { background: var(--accent-hover); }
+    button.secondary { background: #eef2ff; color: #1e3a8a; }
+    button.danger { background: #fee2e2; color: #991b1b; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .button-group { display: flex; gap: 8px; align-items: center; }
+    .status { font-weight: 600; }
+    .progress-wrap {
+      background: #e5e7eb;
+      border-radius: 999px;
+      height: 12px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-inner {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #2563eb, #38bdf8);
+      transition: width 0.25s ease;
+    }
+    .log {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      height: 260px;
+      overflow: auto;
+      font: 13px/1.6 Consolas, "Microsoft YaHei", monospace;
+      white-space: pre-wrap;
+    }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>信息流素材一键拼接</h1>
+    <p class="subtitle">选择开头、结尾文件夹，一键批量生成不同组合的 MP4 视频。</p>
+
+    <section class="card">
+      <h2>素材设置</h2>
+      <div class="row">
+        <label>开头文件夹</label>
+        <input id="head_folder" type="text" placeholder="例如：D:\素材\开头">
+        <div class="button-group">
+          <button class="secondary" onclick="uploadFolder('head')">上传</button>
+        </div>
+      </div>
+      <div class="row">
+        <label>结尾文件夹</label>
+        <input id="tail_folder" type="text" placeholder="例如：D:\素材\结尾">
+        <div class="button-group">
+          <button class="secondary" onclick="uploadFolder('tail')">上传</button>
+        </div>
+      </div>
+      <div class="row plain">
+        <label>固定开头</label>
+        <select id="fixed_head"><option value="">不固定</option></select>
+      </div>
+      <div class="row plain">
+        <label>固定结尾</label>
+        <select id="fixed_tail"><option value="">不固定</option></select>
+      </div>
+      <div class="actions">
+        <button class="secondary" onclick="scanMaterials()">扫描素材</button>
+        <span id="scan_hint" class="hint"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>输出设置</h2>
+      <div class="row">
+        <label>输出目录</label>
+        <input id="output_folder" type="text" placeholder="不填则自动放在开头文件夹同级 output">
+      </div>
+      <div class="row plain">
+        <label>出片数量</label>
+        <input id="count" type="number" min="1" max="200" value="10">
+      </div>
+      <div class="row plain">
+        <label>分辨率</label>
+        <select id="resolution">
+          <option value="1080x1920">1080 × 1920（竖屏）</option>
+          <option value="1920x1080">1920 × 1080（横屏）</option>
+        </select>
+      </div>
+      <div class="row plain">
+        <label>目标时长</label>
+        <select id="duration_mode">
+          <option value="不限制">不限制</option>
+          <option value="15s">15 秒</option>
+          <option value="25s">25 秒</option>
+          <option value="30s">30 秒</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>效果选项</h2>
+      <div class="row">
+        <label><input id="use_watermark" type="checkbox"> 添加水印</label>
+        <input id="watermark_path" type="text" placeholder="水印图片路径">
+        <button class="secondary" onclick="uploadSingle('watermark')">上传</button>
+      </div>
+      <div class="row plain">
+        <label><input id="use_transition" type="checkbox"> 添加转场</label>
+        <span class="hint">片头与片尾之间叠化过渡</span>
+      </div>
+      <div class="row plain">
+        <label>BGM</label>
+        <select id="bgm_mode">
+          <option value="不使用">不使用</option>
+          <option value="本地导入">本地导入</option>
+          <option value="算法生成">算法生成</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>音乐文件</label>
+        <input id="bgm_path" type="text" placeholder="本地导入时填写">
+        <div class="button-group">
+          <button class="secondary" onclick="uploadSingle('bgm')">上传</button>
+        </div>
+      </div>
+      <div class="row plain">
+        <label>BGM 音量</label>
+        <input id="bgm_volume" type="number" min="0" max="1" step="0.05" value="0.2">
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="actions">
+        <button id="start_btn" onclick="startJob()">开始生成</button>
+        <button id="pause_btn" class="secondary" onclick="togglePause()" disabled>暂停</button>
+        <button id="cancel_btn" class="danger" onclick="cancelJob()" disabled>取消</button>
+        <span id="status" class="status">就绪</span>
+      </div>
+      <div class="progress-wrap"><div id="progress" class="progress-inner"></div></div>
+      <div class="log" id="log"></div>
+      <div id="output_files" class="card" style="margin-top: 10px; padding: 12px;"></div>
+    </section>
+  </main>
+
+  <input id="head_upload" type="file" webkitdirectory hidden>
+  <input id="tail_upload" type="file" webkitdirectory hidden>
+  <input id="watermark_upload" type="file" accept="image/*" hidden>
+  <input id="bgm_upload" type="file" accept="audio/*" hidden>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let paused = false;
+    let lastOutputFolder = '';
+    let outputLoaded = false;
+
+    async function api(path, options = {}) {
+      const resp = await fetch(path, options);
+      return resp.json();
+    }
+
+    function uploadFolder(kind) {
+      const input = $(kind + '_upload');
+      input.value = '';
+      input.onchange = async () => {
+        const files = Array.from(input.files || []);
+        if (!files.length) return;
+        await uploadFiles(kind, files);
+        const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
+        if (data.path) {
+          if (kind === 'head') $('head_folder').value = data.path;
+          if (kind === 'tail') $('tail_folder').value = data.path;
+          const out = data.path.replace(/(head|tail)$/, 'output');
+          $('output_folder').value = out;
+          scanMaterials();
+        }
+      };
+      input.click();
+    }
+
+    function uploadSingle(kind) {
+      const input = $(kind + '_upload');
+      input.value = '';
+      input.onchange = async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        await uploadFiles(kind, [file]);
+        const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
+        if (data.path) {
+          const full = data.path + '\\' + file.name;
+          if (kind === 'watermark') $('watermark_path').value = full;
+          if (kind === 'bgm') $('bgm_path').value = full;
+        }
+      };
+      input.click();
+    }
+
+    async function uploadFiles(kind, files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        $('status').textContent = `正在上传 ${i + 1}/${files.length}: ${file.name}`;
+        const buffer = await file.arrayBuffer();
+        await fetch('/api/upload?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(file.name), {
+          method: 'POST',
+          body: buffer,
+        });
+      }
+      $('status').textContent = '上传完成';
+    }
+
+    async function scanMaterials() {
+      const head = $('head_folder').value.trim();
+      const tail = $('tail_folder').value.trim();
+      if (!head || !tail) return;
+      const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail));
+      fillSelect('fixed_head', data.head || []);
+      fillSelect('fixed_tail', data.tail || []);
+      $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个`;
+    }
+
+    function fillSelect(id, items) {
+      const select = $(id);
+      const current = select.value;
+      select.innerHTML = '<option value="">不固定</option>';
+      items.forEach((item) => {
+        const option = document.createElement('option');
+        option.value = item.path;
+        option.textContent = item.name;
+        select.appendChild(option);
+      });
+      if (current) select.value = current;
+    }
+
+    async function startJob() {
+      const payload = {
+        head_folder: $('head_folder').value.trim(),
+        tail_folder: $('tail_folder').value.trim(),
+        output_folder: $('output_folder').value.trim(),
+        fixed_head: $('fixed_head').value,
+        fixed_tail: $('fixed_tail').value,
+        count: $('count').value,
+        resolution: $('resolution').value,
+        duration_mode: $('duration_mode').value,
+        use_watermark: $('use_watermark').checked,
+        watermark_path: $('watermark_path').value.trim(),
+        use_transition: $('use_transition').checked,
+        bgm_mode: $('bgm_mode').value,
+        bgm_path: $('bgm_path').value.trim(),
+        bgm_volume: $('bgm_volume').value,
+      };
+      lastOutputFolder = payload.output_folder;
+      outputLoaded = false;
+      $('output_files').innerHTML = '';
+      const data = await api('/api/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!data.ok) alert(data.error || '启动失败');
+      else {
+        $('log').textContent = '';
+        $('status').textContent = '运行中';
+        updateButtons();
+      }
+    }
+
+    async function cancelJob() {
+      await api('/api/cancel', { method: 'POST' });
+    }
+
+    async function togglePause() {
+      const data = await api('/api/pause', { method: 'POST' });
+      paused = data.paused;
+      $('pause_btn').textContent = paused ? '继续' : '暂停';
+    }
+
+    async function loadOutputFiles(folder) {
+      if (!folder || outputLoaded) return;
+      const data = await api('/api/list_output?folder=' + encodeURIComponent(folder));
+      const files = data.files || [];
+      const box = $('output_files');
+      if (!files.length) {
+        box.innerHTML = '<div class="hint">还没有输出文件</div>';
+      } else {
+        box.innerHTML = '<strong>输出文件</strong><div>' + files.map((f) => {
+          return `<a href="${f.url}" download>${f.name}</a>`;
+        }).join(' &nbsp;|&nbsp; ') + '</div>';
+      }
+      outputLoaded = true;
+    }
+
+    function updateButtons() {
+      $('start_btn').disabled = false;
+      $('pause_btn').disabled = false;
+      $('cancel_btn').disabled = false;
+    }
+
+    async function poll() {
+      try {
+        const state = await api('/api/status');
+        const percent = state.total ? Math.min(100, Math.round((state.current / state.total) * 100)) : 0;
+        $('progress').style.width = percent + '%';
+        $('log').textContent = state.logs.join('\n');
+        $('start_btn').disabled = state.running;
+        $('pause_btn').disabled = !state.running;
+        $('cancel_btn').disabled = !state.running;
+        if (state.running) {
+          $('status').textContent = state.paused ? '已暂停' : `运行中 ${state.current}/${state.total}`;
+          $('pause_btn').textContent = state.paused ? '继续' : '暂停';
+        } else {
+          $('pause_btn').textContent = '暂停';
+          if (state.error) $('status').textContent = '发生错误';
+          else if (state.cancelled) $('status').textContent = '已取消';
+          else if (state.success !== undefined) $('status').textContent = `已完成：成功 ${state.success}，失败 ${state.failed}`;
+        }
+        if (!state.running && !state.error && state.success > 0) {
+          loadOutputFiles(lastOutputFolder);
+        }
+      } catch (e) {
+        $('status').textContent = '服务连接失败';
+      }
+    }
+
+    setInterval(poll, 1000);
+    poll();
+  </script>
+</body>
+</html>

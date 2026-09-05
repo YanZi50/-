@@ -1,0 +1,7 @@
+__pycache__/
+uploads/
+发布版/
+build/
+dist/
+bin/
+*.spec
