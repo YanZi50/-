@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from config_store import load_last_config, save_last_config
-from history_store import list_history, save_history
+from history_store import clear_history, list_history, save_history
 from template_store import delete_template, list_templates, load_template, save_template
 from platform_presets import apply_preset, get_presets
 import subtitle_plugin
@@ -110,6 +110,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/templates":
             self._send_json({"templates": list_templates()})
+            return
+        if parsed.path == "/api/history/clear":
+            self._send_json({"ok": True, "removed": clear_history()})
             return
         if parsed.path == "/api/history":
             self._send_json({"history": list_history()})

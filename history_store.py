@@ -33,3 +33,17 @@ def list_history() -> list[dict]:
         except Exception:
             continue
     return items
+
+def clear_history() -> int:
+    folder = history_dir()
+    if not folder.exists():
+        return 0
+    files = list(folder.glob("task_*.json"))
+    count = 0
+    for path in files:
+        try:
+            path.unlink(missing_ok=True)
+            count += 1
+        except Exception:
+            continue
+    return count

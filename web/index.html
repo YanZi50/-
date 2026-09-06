@@ -114,6 +114,13 @@
           <button class="secondary" onclick="uploadFolder('tail')">上传</button>
         </div>
       </div>
+      <div class="row">
+        <label>中间文件夹</label>
+        <input id="middle_folder" type="text" placeholder="可选：D:\素材\中间">
+        <div class="button-group">
+          <button class="secondary" onclick="uploadFolder('middle')">上传</button>
+        </div>
+      </div>
       <div class="row plain">
         <label>固定开头</label>
         <select id="fixed_head"><option value="">不固定</option></select>
@@ -121,6 +128,10 @@
       <div class="row plain">
         <label>固定结尾</label>
         <select id="fixed_tail"><option value="">不固定</option></select>
+      </div>
+      <div class="row plain">
+        <label>固定中间</label>
+        <select id="fixed_middle"><option value="">不固定</option></select>
       </div>
       <div class="actions">
         <button class="secondary" onclick="scanMaterials()">扫描素材</button>
@@ -137,6 +148,32 @@
       <div class="row plain">
         <label>出片数量</label>
         <input id="count" type="number" min="1" max="200" value="10">
+      </div>
+      <div class="row plain">
+        <label>文件名模板</label>
+        <input id="output_name_template" type="text" value="output_{序号}_{开头}_{结尾}">
+      </div>
+      <div class="row plain">
+        <label><input id="dedupe_enabled" type="checkbox" checked> 智能去重</label>
+        <span class="hint">尽量降低重复组合</span>
+      </div>
+      <div class="row plain">
+        <label>随机种子</label>
+        <input id="random_seed" type="number" value="20260905">
+      </div>
+      <div class="row plain">
+        <label>平台预设</label>
+        <select id="platform_preset">
+          <option value="">自定义</option>
+          <option>抖音竖屏</option>
+          <option>快手竖屏</option>
+          <option>小红书竖屏</option>
+          <option>B站横屏</option>
+          <option>信息流15秒</option>
+          <option>信息流25秒</option>
+          <option>信息流30秒</option>
+        </select>
+        <button class="secondary" onclick="applyPlatformPreset()">应用</button>
       </div>
       <div class="row plain">
         <label>分辨率</label>
@@ -172,6 +209,10 @@
         <span class="hint">片头与片尾之间叠化过渡</span>
       </div>
       <div class="row plain">
+        <label><input id="use_subtitle" type="checkbox"> 自动字幕</label>
+        <span class="hint">需要安装 faster-whisper</span>
+      </div>
+      <div class="row plain">
         <label>BGM</label>
         <select id="bgm_mode">
           <option value="不使用">不使用</option>
@@ -205,8 +246,23 @@
     </section>
 
     <section class="card">
+      <h2>模板管理</h2>
+      <div class="row plain">
+        <label>模板名称</label>
+        <input id="template_name" type="text" placeholder="例如：抖音带货竖屏">
+      </div>
+      <div class="actions">
+        <button class="secondary" onclick="saveTemplate()">保存为模板</button>
+        <button class="secondary" onclick="loadTemplate()">载入模板</button>
+        <button class="danger" onclick="deleteTemplate()">删除模板</button>
+      </div>
+      <div id="template_list" class="hint" style="margin-top: 8px;"></div>
+    </section>
+
+    <section class="card">
       <h2>任务历史</h2>
       <button class="secondary" onclick="loadHistory()">刷新历史</button>
+      <button class="danger" onclick="clearHistory()">清空历史记录</button>
       <div id="history_list" class="hint" style="margin-top: 8px;"></div>
     </section>
 
@@ -567,6 +623,13 @@
       });
       alert(data.ok ? '模板已删除' : '模板不存在');
       refreshTemplates();
+    }
+
+    async function clearHistory() {
+      if (!confirm('确定要清空所有任务历史记录吗？')) return;
+      const data = await api('/api/history/clear');
+      alert(data.ok ? '已清空历史记录' : '清空失败');
+      loadHistory();
     }
 
     async function loadHistory() {
