@@ -145,6 +145,7 @@ def normalize_clip(
     cancel_event,
     pause_event,
     log: Optional[Callable[[str], None]] = None,
+    normalize_audio: bool = False,
 ) -> None:
     vf = _filter_scale_pad(width, height)
     args = [_ffmpeg(), "-y", "-i", src]
@@ -167,6 +168,8 @@ def normalize_clip(
         args += ["-map", "0:a:0"]
     else:
         args += ["-map", "1:a:0"]
+    if has_audio and normalize_audio:
+        args += ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]
     args += [
         "-c:v",
         "libx264",
@@ -254,11 +257,25 @@ def mix_bgm(
     cancel_event,
     pause_event,
     log: Optional[Callable[[str], None]] = None,
+    fade: bool = False,
+    ducking: bool = False,
+    bgm_duration: float = 0.0,
 ) -> None:
-    fc = (
-        f"[1:a]volume={volume:.2f}[bgm];"
-        "[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=3[a]"
-    )
+    bgm_chain = f"[1:a]volume={volume:.2f}"
+    if fade:
+        fade_duration = min(1.2, max(0.1, bgm_duration * 0.2)) if bgm_duration > 0 else 1.0
+        fade_start = max(0.0, bgm_duration - fade_duration) if bgm_duration > 0 else 0.0
+        bgm_chain += f",afade=t=in:d={fade_duration:.3f},afade=t=out:st={fade_start:.3f}:d={fade_duration:.3f}"
+    bgm_chain += "[bgm]"
+    if ducking:
+        fc = (
+            f"{bgm_chain};"
+            "[0:a]asplit=2[voice][mixvoice];"
+            "[bgm][voice]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=200[duckbgm];"
+            "[mixvoice][duckbgm]amix=inputs=2:duration=first:dropout_transition=3[a]"
+        )
+    else:
+        fc = f"{bgm_chain};[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=3[a]"
     args = [
         _ffmpeg(),
         "-y",
@@ -410,6 +427,9 @@ class JobConfig:
     bgm_mode: str = "不使用"
     bgm_path: str = ""
     bgm_volume: float = 0.2
+    normalize_audio: bool = False
+    bgm_fade: bool = False
+    bgm_ducking: bool = False
 
 
 @dataclass
@@ -583,6 +603,7 @@ def _process_one_combo(
             cancel_event,
             pause_event,
             log,
+            config.normalize_audio,
         )
         normalize_clip(
             tail,
@@ -594,6 +615,7 @@ def _process_one_combo(
             cancel_event,
             pause_event,
             log,
+            config.normalize_audio,
         )
         concat_two(
             head_norm,
@@ -618,6 +640,11 @@ def _process_one_combo(
                 log("正在生成背景音乐...")
                 generate_bgm_wav(bgm, max(32.0, head_info["duration"] + tail_info["duration"]))
             mixed = str(tempdir / "with_bgm.mp4")
+            if config.bgm_mode == "本地导入":
+                bgm_info = probe_media(bgm)
+                bgm_duration = bgm_info["duration"]
+            else:
+                bgm_duration = max(32.0, head_info["duration"] + tail_info["duration"])
             mix_bgm(
                 current,
                 bgm,
@@ -626,6 +653,9 @@ def _process_one_combo(
                 cancel_event,
                 pause_event,
                 log,
+                fade=config.bgm_fade,
+                ducking=config.bgm_ducking,
+                bgm_duration=bgm_duration,
             )
             current = mixed
 

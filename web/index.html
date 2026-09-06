@@ -190,6 +190,18 @@
         <label>BGM 音量</label>
         <input id="bgm_volume" type="number" min="0" max="1" step="0.05" value="0.2">
       </div>
+      <div class="row plain">
+        <label><input id="normalize_audio" type="checkbox"> 统一音量</label>
+        <span class="hint">让不同素材的响度尽量接近</span>
+      </div>
+      <div class="row plain">
+        <label><input id="bgm_fade" type="checkbox"> BGM 淡入淡出</label>
+        <span class="hint">背景音乐首尾平滑过渡</span>
+      </div>
+      <div class="row plain">
+        <label><input id="bgm_ducking" type="checkbox"> BGM 自动闪避</label>
+        <span class="hint">有人声时自动降低背景音乐</span>
+      </div>
     </section>
 
     <section class="card">
@@ -315,6 +327,9 @@
         bgm_mode: $('bgm_mode').value,
         bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,
+        normalize_audio: $('normalize_audio').checked,
+        bgm_fade: $('bgm_fade').checked,
+        bgm_ducking: $('bgm_ducking').checked,
       };
     }
 
@@ -334,6 +349,9 @@
       $('bgm_mode').value = cfg.bgm_mode || '不使用';
       $('bgm_path').value = cfg.bgm_path || '';
       $('bgm_volume').value = cfg.bgm_volume || 0.2;
+      $('normalize_audio').checked = !!cfg.normalize_audio;
+      $('bgm_fade').checked = !!cfg.bgm_fade;
+      $('bgm_ducking').checked = !!cfg.bgm_ducking;
       scanMaterials();
     }
 
@@ -371,6 +389,9 @@
         bgm_mode: $('bgm_mode').value,
         bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,
+        normalize_audio: $('normalize_audio').checked,
+        bgm_fade: $('bgm_fade').checked,
+        bgm_ducking: $('bgm_ducking').checked,
       };
       lastOutputFolder = payload.output_folder;
       outputLoaded = false;

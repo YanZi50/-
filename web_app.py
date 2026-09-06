@@ -447,6 +447,9 @@ class Handler(BaseHTTPRequestHandler):
             bgm_mode=bgm_mode,
             bgm_path=bgm_path,
             bgm_volume=float(payload.get("bgm_volume", 0.2)),
+            normalize_audio=bool(payload.get("normalize_audio", False)),
+            bgm_fade=bool(payload.get("bgm_fade", False)),
+            bgm_ducking=bool(payload.get("bgm_ducking", False)),
         )
 
 

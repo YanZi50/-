@@ -1,0 +1,16 @@
+{
+  "head_folder": "D:\\Myfolder\\sppj\\uploads\\head",
+  "tail_folder": "D:\\Myfolder\\sppj\\uploads\\tail",
+  "output_folder": "D:\\Myfolder\\sppj\\uploads\\output",
+  "fixed_head": "",
+  "fixed_tail": "",
+  "count": "3",
+  "resolution": "1080x1920",
+  "duration_mode": "不限制",
+  "use_watermark": false,
+  "watermark_path": "",
+  "use_transition": true,
+  "bgm_mode": "不使用",
+  "bgm_path": "D:\\Myfolder\\sppj\\uploads\\files\\ai孙燕姿清明雨上自留.mp3",
+  "bgm_volume": "1"
+}
