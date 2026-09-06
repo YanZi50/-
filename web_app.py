@@ -2,11 +2,13 @@ import json
 import os
 import sys
 import threading
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
 from config_store import load_last_config, save_last_config
+from history_store import list_history, save_history
 
 from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_videos
 
@@ -92,6 +94,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/":
             self._serve_file("index.html")
+            return
+        if parsed.path == "/api/history":
+            self._send_json({"history": list_history()})
             return
         if parsed.path == "/api/config/load":
             self._send_json(load_last_config())
@@ -285,6 +290,26 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 STATE.result = result
                 STATE.last_failed_items = list(result.failed_items)
+                save_history(
+                    {
+                        "type": "retry_failed",
+                        "config": asdict(config),
+                        "success": result.success,
+                        "skipped": result.skipped,
+                        "failed": result.failed,
+                        "cancelled": result.cancelled,
+                    }
+                )
+                save_history(
+                    {
+                        "type": "batch",
+                        "config": asdict(config),
+                        "success": result.success,
+                        "skipped": result.skipped,
+                        "failed": result.failed,
+                        "cancelled": result.cancelled,
+                    }
+                )
             except MediaError as exc:
                 STATE.error = str(exc)
                 STATE.add_log(str(exc))
@@ -336,6 +361,26 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 STATE.result = result
                 STATE.last_failed_items = list(result.failed_items)
+                save_history(
+                    {
+                        "type": "retry_failed",
+                        "config": asdict(config),
+                        "success": result.success,
+                        "skipped": result.skipped,
+                        "failed": result.failed,
+                        "cancelled": result.cancelled,
+                    }
+                )
+                save_history(
+                    {
+                        "type": "batch",
+                        "config": asdict(config),
+                        "success": result.success,
+                        "skipped": result.skipped,
+                        "failed": result.failed,
+                        "cancelled": result.cancelled,
+                    }
+                )
             except MediaError as exc:
                 STATE.error = str(exc)
                 STATE.add_log(str(exc))

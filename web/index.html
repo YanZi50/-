@@ -193,6 +193,12 @@
     </section>
 
     <section class="card">
+      <h2>任务历史</h2>
+      <button class="secondary" onclick="loadHistory()">刷新历史</button>
+      <div id="history_list" class="hint" style="margin-top: 8px;"></div>
+    </section>
+
+    <section class="card">
       <div class="actions">
         <button id="start_btn" onclick="startJob()">开始生成</button>
         <button id="pause_btn" class="secondary" onclick="togglePause()" disabled>暂停</button>
@@ -433,6 +439,20 @@
       $('cancel_btn').disabled = false;
     }
 
+    async function loadHistory() {
+      const data = await api('/api/history');
+      const box = $('history_list');
+      const items = data.history || [];
+      if (!items.length) {
+        box.textContent = '暂无历史记录';
+        return;
+      }
+      box.innerHTML = items.slice(0, 20).map((item) => {
+        const cfg = item.config || {};
+        return `<div style="border-bottom:1px solid #e2e8f0;padding:6px 0;">${item._file} · 成功 ${item.success} · 跳过 ${item.skipped} · 失败 ${item.failed} · ${cfg.head_folder || ''}</div>`;
+      }).join('');
+    }
+
     async function poll() {
       try {
         const state = await api('/api/status');
@@ -464,6 +484,7 @@
     (async () => {
       const cfg = await api('/api/config/load');
       if (cfg && Object.keys(cfg).length) applyConfig(cfg);
+      loadHistory();
     })();
   </script>
 </body>
