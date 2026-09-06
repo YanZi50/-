@@ -320,6 +320,8 @@
         fixed_tail: $('fixed_tail').value,
         count: $('count').value,
         output_name_template: $('output_name_template').value,
+        dedupe_enabled: $('dedupe_enabled').checked,
+        random_seed: $('random_seed').value,
         resolution: $('resolution').value,
         duration_mode: $('duration_mode').value,
         use_watermark: $('use_watermark').checked,
@@ -343,6 +345,8 @@
       $('fixed_tail').value = cfg.fixed_tail || '';
       $('count').value = cfg.count || 10;
       $('output_name_template').value = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
+      $('dedupe_enabled').checked = cfg.dedupe_enabled !== false;
+      $('random_seed').value = cfg.random_seed || 20260905;
       $('resolution').value = cfg.resolution || '1080x1920';
       $('duration_mode').value = cfg.duration_mode || '不限制';
       $('use_watermark').checked = !!cfg.use_watermark;
@@ -384,6 +388,8 @@
         fixed_tail: $('fixed_tail').value,
         count: $('count').value,
         output_name_template: $('output_name_template').value,
+        dedupe_enabled: $('dedupe_enabled').checked,
+        random_seed: $('random_seed').value,
         resolution: $('resolution').value,
         duration_mode: $('duration_mode').value,
         use_watermark: $('use_watermark').checked,

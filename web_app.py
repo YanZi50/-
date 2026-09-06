@@ -451,6 +451,8 @@ class Handler(BaseHTTPRequestHandler):
             bgm_fade=bool(payload.get("bgm_fade", False)),
             bgm_ducking=bool(payload.get("bgm_ducking", False)),
             output_name_template=str(payload.get("output_name_template", "output_{序号}_{开头}_{结尾}")),
+            random_seed=int(payload.get("random_seed", 20260905)),
+            dedupe_enabled=bool(payload.get("dedupe_enabled", True)),
         )
 
 

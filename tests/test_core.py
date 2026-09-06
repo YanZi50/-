@@ -86,6 +86,14 @@ class CorePipelineTests(unittest.TestCase):
         values.update(overrides)
         return JobConfig(**values)
 
+    def test_deterministic_combinations(self) -> None:
+        heads = ["h1.mp4", "h2.mp4", "h3.mp4"]
+        tails = ["t1.mp4", "t2.mp4"]
+        first = build_combinations(heads, tails, None, None, 6, seed=7)
+        second = build_combinations(heads, tails, None, None, 6, seed=7)
+        self.assertEqual(first, second)
+        self.assertEqual(len(set(first)), 6)
+
     def test_render_output_name(self) -> None:
         name = render_output_name("{序号}_{开头}_{结尾}", 3, "head.mp4", "tail.mp4")
         self.assertEqual(name, "003_head_tail.mp4")

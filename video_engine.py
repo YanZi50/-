@@ -387,22 +387,40 @@ def build_combinations(
     fixed_head: Optional[str],
     fixed_tail: Optional[str],
     count: int,
+    seed: int = 20260905,
+    dedupe_enabled: bool = True,
 ) -> list[tuple[str, str]]:
+    import random
+
+    rng = random.Random(seed)
     if fixed_head and fixed_tail:
         return [(fixed_head, fixed_tail)]
     if fixed_head:
         unique = list(dict.fromkeys(tail_files))
-        return [(fixed_head, unique[i % len(unique)]) for i in range(count)]
+        rng.shuffle(unique)
+        result = []
+        while len(result) < count:
+            result.extend(unique)
+        return [(fixed_head, tail) for tail in result[:count]]
     if fixed_tail:
         unique = list(dict.fromkeys(head_files))
-        return [(unique[i % len(unique)], fixed_tail) for i in range(count)]
+        rng.shuffle(unique)
+        result = []
+        while len(result) < count:
+            result.extend(unique)
+        return [(head, fixed_tail) for head in result[:count]]
 
     pairs = [(h, t) for h in head_files for t in tail_files]
     if not pairs:
         return []
-    import random
+    if not dedupe_enabled:
+        return [(rng.choice(head_files), rng.choice(tail_files)) for _ in range(count)]
 
-    rng = random.Random(20260905)
+    if count <= len(pairs):
+        batch = list(pairs)
+        rng.shuffle(batch)
+        return batch[:count]
+
     result = []
     while len(result) < count:
         batch = list(pairs)
@@ -431,6 +449,8 @@ class JobConfig:
     bgm_fade: bool = False
     bgm_ducking: bool = False
     output_name_template: str = "output_{序号}_{开头}_{结尾}"
+    random_seed: int = 20260905
+    dedupe_enabled: bool = True
 
 
 @dataclass
@@ -509,6 +529,8 @@ def process_batch(
         config.fixed_head,
         config.fixed_tail,
         count,
+        config.random_seed,
+        config.dedupe_enabled,
     )
     if not combos:
         raise MediaError("没有可生成的素材组合。")
