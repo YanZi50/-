@@ -18,9 +18,11 @@ PORT = 8765
 if getattr(sys, "frozen", False):
     WEB_DIR = Path(sys._MEIPASS) / "web"
     UPLOAD_ROOT = Path(sys.executable).resolve().parent / "uploads"
+    PREVIEW_DIR = Path(sys.executable).resolve().parent / "previews"
 else:
     WEB_DIR = Path(__file__).parent / "web"
     UPLOAD_ROOT = Path(__file__).parent / "uploads"
+    PREVIEW_DIR = Path(__file__).parent / "previews"
 
 
 class AppState:
@@ -145,6 +147,9 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json()
             path = save_last_config(payload)
             self._send_json({"ok": True, "path": str(path)})
+            return
+        if parsed.path == "/api/preview":
+            self._preview()
             return
         if parsed.path == "/api/start":
             self._start()
@@ -315,6 +320,55 @@ class Handler(BaseHTTPRequestHandler):
                         "cancelled": result.cancelled,
                     }
                 )
+            except MediaError as exc:
+                STATE.error = str(exc)
+                STATE.add_log(str(exc))
+            except Exception as exc:
+                STATE.error = f"程序异常：{exc}"
+                STATE.add_log(STATE.error)
+            finally:
+                STATE.running = False
+
+        STATE.worker = threading.Thread(target=worker, daemon=True)
+        STATE.worker.start()
+        self._send_json({"ok": True})
+
+    def _preview(self) -> None:
+        if STATE.running:
+            self._send_json({"ok": False, "error": "任务正在运行"})
+            return
+        payload = self._read_json()
+        config = self._make_config(payload)
+        if isinstance(config, str):
+            self._send_json({"ok": False, "error": config})
+            return
+        config.count = 1
+        config.output_folder = str(PREVIEW_DIR)
+        config.output_name_template = "preview"
+        STATE.cancel_event.clear()
+        STATE.pause_event.clear()
+        STATE.result = None
+        STATE.error = None
+        STATE.current = 0
+        STATE.total = 1
+        STATE.logs = []
+        STATE.paused = False
+        STATE.running = True
+        STATE.last_config = config
+        STATE.last_failed_items = []
+        STATE.add_log("开始生成预览")
+
+        def log(message: str) -> None:
+            STATE.add_log(message)
+
+        def progress(current: int, total: int) -> None:
+            STATE.set_progress(current, total)
+
+        def worker() -> None:
+            try:
+                result = process_batch(config, STATE.cancel_event, STATE.pause_event, log=log, progress=progress)
+                STATE.result = result
+                STATE.last_failed_items = list(result.failed_items)
             except MediaError as exc:
                 STATE.error = str(exc)
                 STATE.add_log(str(exc))

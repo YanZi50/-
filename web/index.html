@@ -212,13 +212,14 @@
 
     <section class="card">
       <div class="actions">
-        <button id="start_btn" onclick="startJob()">开始生成</button>
+        <button id="start_btn" onclick="startJob()">开始生成</button><button class="secondary" onclick="previewJob()">生成预览</button>
         <button id="pause_btn" class="secondary" onclick="togglePause()" disabled>暂停</button>
         <button id="cancel_btn" class="danger" onclick="cancelJob()" disabled>取消</button><button id="retry_btn" class="secondary" onclick="retryFailed()" disabled>重试失败项</button>
         <span id="status" class="status">就绪</span>
       </div>
       <div class="progress-wrap"><div id="progress" class="progress-inner"></div></div>
       <div class="log" id="log"></div>
+      <div id="preview_box" class="card" style="margin-top: 10px; padding: 12px;"></div>
       <div id="output_files" class="card" style="margin-top: 10px; padding: 12px;"></div>
     </section>
   </main>
@@ -394,6 +395,22 @@
       applyConfig(cfg);
     }
 
+    async function previewJob() {
+      const payload = collectConfig();
+      const data = await api('/api/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!data.ok) alert(data.error || '预览失败');
+      else {
+        $('log').textContent = '';
+        $('preview_box').innerHTML = '';
+        $('status').textContent = '预览生成中';
+        updateButtons();
+      }
+    }
+
     async function startJob() {
       const payload = {
         head_folder: $('head_folder').value.trim(),
@@ -453,6 +470,18 @@
       const data = await api('/api/pause', { method: 'POST' });
       paused = data.paused;
       $('pause_btn').textContent = paused ? '继续' : '暂停';
+    }
+
+    function renderPreview(state) {
+      const box = $('preview_box');
+      if (!box || box.dataset.rendered) return;
+      const item = (state.success_items || [])[0];
+      if (!item) return;
+      const folder = item.output.replace(/[\\/][^\\/]+$/, '');
+      const name = item.output.split(/[\\/]/).pop();
+      const url = '/api/download?folder=' + encodeURIComponent(folder) + '&name=' + encodeURIComponent(name);
+      box.innerHTML = '<strong>预览结果</strong><div style="margin-top:8px;"><video controls style="max-width:100%;max-height:320px;" src="' + url + '"></video></div>';
+      box.dataset.rendered = '1';
     }
 
     function renderResults(state) {
@@ -520,6 +549,7 @@
         }
         if (!state.running && !state.error && state.success > 0) {
           renderResults(state);
+          renderPreview(state);
         }
       } catch (e) {
         $('status').textContent = '服务连接失败';
