@@ -382,13 +382,15 @@ def apply_watermark(
     src: str,
     watermark: str,
     dst: str,
+    width: int,
+    height: int,
     cancel_event,
     pause_event,
     log: Optional[Callable[[str], None]] = None,
 ) -> None:
     fc = (
-        "[1:v]scale=iw*0.16:-1[wm];"
-        "[0:v][wm]overlay=W-w-40:H-h-40:format=auto:shortest=1[v]"
+        f"[1:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}[wm];"
+        "[0:v][wm]overlay=0:0:format=auto:shortest=1[v]"
     )
     args = [
         _ffmpeg(),
@@ -847,6 +849,8 @@ def _process_one_combo(
                 current,
                 config.watermark_path,
                 watermarked,
+                width,
+                height,
                 cancel_event,
                 pause_event,
                 log,
