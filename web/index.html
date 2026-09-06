@@ -225,6 +225,7 @@
 
   <input id="head_upload" type="file" webkitdirectory hidden>
   <input id="tail_upload" type="file" webkitdirectory hidden>
+  <input id="middle_upload" type="file" webkitdirectory hidden>
   <input id="watermark_upload" type="file" accept="image/*" hidden>
   <input id="bgm_upload" type="file" accept="audio/*" hidden>
 
@@ -250,7 +251,8 @@
         if (data.path) {
           if (kind === 'head') $('head_folder').value = data.path;
           if (kind === 'tail') $('tail_folder').value = data.path;
-          const out = data.path.replace(/(head|tail)$/, 'output');
+          if (kind === 'middle') $('middle_folder').value = data.path;
+          const out = data.path.replace(/(head|tail|middle)$/, 'output');
           $('output_folder').value = out;
           scanMaterials();
         }
@@ -291,11 +293,13 @@
     async function scanMaterials() {
       const head = $('head_folder').value.trim();
       const tail = $('tail_folder').value.trim();
+      const middle = $('middle_folder').value.trim();
       if (!head || !tail) return;
-      const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail));
+      const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail) + '&middle=' + encodeURIComponent(middle));
       fillSelect('fixed_head', data.head || []);
       fillSelect('fixed_tail', data.tail || []);
-      $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个`;
+      fillSelect('fixed_middle', data.middle || []);
+      $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个，中间 ${data.middle.length} 个`;
     }
 
     function fillSelect(id, items) {
@@ -315,9 +319,11 @@
       return {
         head_folder: $('head_folder').value.trim(),
         tail_folder: $('tail_folder').value.trim(),
+        middle_folder: $('middle_folder').value.trim(),
         output_folder: $('output_folder').value.trim(),
         fixed_head: $('fixed_head').value,
         fixed_tail: $('fixed_tail').value,
+        fixed_middle: $('fixed_middle').value,
         count: $('count').value,
         output_name_template: $('output_name_template').value,
         dedupe_enabled: $('dedupe_enabled').checked,
@@ -340,9 +346,11 @@
       if (!cfg) return;
       $('head_folder').value = cfg.head_folder || '';
       $('tail_folder').value = cfg.tail_folder || '';
+      $('middle_folder').value = cfg.middle_folder || '';
       $('output_folder').value = cfg.output_folder || '';
       $('fixed_head').value = cfg.fixed_head || '';
       $('fixed_tail').value = cfg.fixed_tail || '';
+      $('fixed_middle').value = cfg.fixed_middle || '';
       $('count').value = cfg.count || 10;
       $('output_name_template').value = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
       $('dedupe_enabled').checked = cfg.dedupe_enabled !== false;
@@ -383,9 +391,11 @@
       const payload = {
         head_folder: $('head_folder').value.trim(),
         tail_folder: $('tail_folder').value.trim(),
+        middle_folder: $('middle_folder').value.trim(),
         output_folder: $('output_folder').value.trim(),
         fixed_head: $('fixed_head').value,
         fixed_tail: $('fixed_tail').value,
+        fixed_middle: $('fixed_middle').value,
         count: $('count').value,
         output_name_template: $('output_name_template').value,
         dedupe_enabled: $('dedupe_enabled').checked,
