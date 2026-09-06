@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from config_store import load_last_config, save_last_config
 from history_store import list_history, save_history
 from template_store import delete_template, list_templates, load_template, save_template
+from platform_presets import apply_preset, get_presets
 
 from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_videos
 
@@ -97,6 +98,14 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/":
             self._serve_file("index.html")
+            return
+        if parsed.path == "/api/platform_presets":
+            self._send_json({"presets": get_presets()})
+            return
+        if parsed.path == "/api/platform_presets/apply":
+            query = parse_qs(parsed.query)
+            name = (query.get("name") or [""])[0]
+            self._send_json(apply_preset(name))
             return
         if parsed.path == "/api/templates":
             self._send_json({"templates": list_templates()})

@@ -515,6 +515,14 @@
       $('cancel_btn').disabled = false;
     }
 
+    async function applyPlatformPreset() {
+      const name = $('platform_preset').value;
+      if (!name) return;
+      const preset = await api('/api/platform_presets/apply?name=' + encodeURIComponent(name));
+      if (preset.resolution) $('resolution').value = preset.resolution;
+      if (preset.duration_mode) $('duration_mode').value = preset.duration_mode;
+    }
+
     async function refreshTemplates() {
       const data = await api('/api/templates');
       const box = $('template_list');
