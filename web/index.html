@@ -515,6 +515,49 @@
       $('cancel_btn').disabled = false;
     }
 
+    async function refreshTemplates() {
+      const data = await api('/api/templates');
+      const box = $('template_list');
+      const items = data.templates || [];
+      box.textContent = items.length ? '已保存模板：' + items.join('、') : '暂无模板';
+    }
+
+    async function saveTemplate() {
+      const name = $('template_name').value.trim();
+      if (!name) { alert('请填写模板名称'); return; }
+      const data = await api('/api/templates/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, config: collectConfig() }),
+      });
+      alert(data.ok ? '模板已保存' : (data.error || '保存失败'));
+      refreshTemplates();
+    }
+
+    async function loadTemplate() {
+      const name = $('template_name').value.trim();
+      if (!name) { alert('请填写要载入的模板名称'); return; }
+      const cfg = await api('/api/templates/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (cfg && Object.keys(cfg).length) applyConfig(cfg);
+      else alert('模板不存在');
+    }
+
+    async function deleteTemplate() {
+      const name = $('template_name').value.trim();
+      if (!name) { alert('请填写要删除的模板名称'); return; }
+      const data = await api('/api/templates/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      alert(data.ok ? '模板已删除' : '模板不存在');
+      refreshTemplates();
+    }
+
     async function loadHistory() {
       const data = await api('/api/history');
       const box = $('history_list');
@@ -565,6 +608,7 @@
       const cfg = await api('/api/config/load');
       if (cfg && Object.keys(cfg).length) applyConfig(cfg);
       loadHistory();
+      refreshTemplates();
     })();
   </script>
 </body>

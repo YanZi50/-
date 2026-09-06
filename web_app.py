@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from config_store import load_last_config, save_last_config
 from history_store import list_history, save_history
+from template_store import delete_template, list_templates, load_template, save_template
 
 from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_videos
 
@@ -97,6 +98,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/":
             self._serve_file("index.html")
             return
+        if parsed.path == "/api/templates":
+            self._send_json({"templates": list_templates()})
+            return
         if parsed.path == "/api/history":
             self._send_json({"history": list_history()})
             return
@@ -143,6 +147,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path == "/api/templates/save":
+            payload = self._read_json()
+            name = str(payload.get("name", "")).strip()
+            if not name:
+                self._send_json({"ok": False, "error": "模板名称不能为空"}, 400)
+                return
+            try:
+                path = save_template(name, payload.get("config", {}))
+                self._send_json({"ok": True, "path": str(path)})
+            except ValueError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, 400)
+            return
+        if parsed.path == "/api/templates/load":
+            payload = self._read_json()
+            name = str(payload.get("name", "")).strip()
+            self._send_json(load_template(name))
+            return
+        if parsed.path == "/api/templates/delete":
+            payload = self._read_json()
+            name = str(payload.get("name", "")).strip()
+            self._send_json({"ok": delete_template(name)})
+            return
         if parsed.path == "/api/config/save":
             payload = self._read_json()
             path = save_last_config(payload)
