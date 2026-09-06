@@ -6,6 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
+from config_store import load_last_config, save_last_config
+
 from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_videos
 
 
@@ -90,6 +92,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/":
             self._serve_file("index.html")
             return
+        if parsed.path == "/api/config/load":
+            self._send_json(load_last_config())
+            return
         if parsed.path == "/api/status":
             self._send_json(STATE.status_dict())
             return
@@ -127,6 +132,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path == "/api/config/save":
+            payload = self._read_json()
+            path = save_last_config(payload)
+            self._send_json({"ok": True, "path": str(path)})
+            return
         if parsed.path == "/api/start":
             self._start()
             return

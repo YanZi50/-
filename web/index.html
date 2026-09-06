@@ -154,6 +154,10 @@
           <option value="30s">30 秒</option>
         </select>
       </div>
+      <div class="actions">
+        <button class="secondary" onclick="saveConfig()">保存配置</button>
+        <button class="secondary" onclick="loadConfig()">载入配置</button>
+      </div>
     </section>
 
     <section class="card">
@@ -289,6 +293,62 @@
       if (current) select.value = current;
     }
 
+    function collectConfig() {
+      return {
+        head_folder: $('head_folder').value.trim(),
+        tail_folder: $('tail_folder').value.trim(),
+        output_folder: $('output_folder').value.trim(),
+        fixed_head: $('fixed_head').value,
+        fixed_tail: $('fixed_tail').value,
+        count: $('count').value,
+        resolution: $('resolution').value,
+        duration_mode: $('duration_mode').value,
+        use_watermark: $('use_watermark').checked,
+        watermark_path: $('watermark_path').value.trim(),
+        use_transition: $('use_transition').checked,
+        bgm_mode: $('bgm_mode').value,
+        bgm_path: $('bgm_path').value.trim(),
+        bgm_volume: $('bgm_volume').value,
+      };
+    }
+
+    function applyConfig(cfg) {
+      if (!cfg) return;
+      $('head_folder').value = cfg.head_folder || '';
+      $('tail_folder').value = cfg.tail_folder || '';
+      $('output_folder').value = cfg.output_folder || '';
+      $('fixed_head').value = cfg.fixed_head || '';
+      $('fixed_tail').value = cfg.fixed_tail || '';
+      $('count').value = cfg.count || 10;
+      $('resolution').value = cfg.resolution || '1080x1920';
+      $('duration_mode').value = cfg.duration_mode || '不限制';
+      $('use_watermark').checked = !!cfg.use_watermark;
+      $('watermark_path').value = cfg.watermark_path || '';
+      $('use_transition').checked = !!cfg.use_transition;
+      $('bgm_mode').value = cfg.bgm_mode || '不使用';
+      $('bgm_path').value = cfg.bgm_path || '';
+      $('bgm_volume').value = cfg.bgm_volume || 0.2;
+      scanMaterials();
+    }
+
+    async function saveConfig() {
+      const data = await api('/api/config/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(collectConfig()),
+      });
+      alert(data.ok ? '配置已保存' : (data.error || '保存失败'));
+    }
+
+    async function loadConfig() {
+      const cfg = await api('/api/config/load');
+      if (!cfg || !Object.keys(cfg).length) {
+        alert('还没有保存过配置');
+        return;
+      }
+      applyConfig(cfg);
+    }
+
     async function startJob() {
       const payload = {
         head_folder: $('head_folder').value.trim(),
@@ -391,6 +451,10 @@
 
     setInterval(poll, 1000);
     poll();
+    (async () => {
+      const cfg = await api('/api/config/load');
+      if (cfg && Object.keys(cfg).length) applyConfig(cfg);
+    })();
   </script>
 </body>
 </html>
