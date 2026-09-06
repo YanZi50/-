@@ -98,18 +98,6 @@ class CorePipelineTests(unittest.TestCase):
         name = render_output_name("{序号}_{开头}_{结尾}", 3, "head.mp4", "tail.mp4")
         self.assertEqual(name, "003_head_tail.mp4")
 
-    def test_middle_material(self) -> None:
-        middle = self.temp / "middle"
-        middle.mkdir()
-        make_clip(self.head / "h.mp4", "blue")
-        make_clip(middle / "m.mp4", "yellow")
-        make_clip(self.tail / "t.mp4", "red")
-        config = self._config(count=1, middle_folder=str(middle), output_name_template="output_{序号}_{开头}_{中间}_{结尾}")
-        result = process_batch(config, threading.Event(), threading.Event())
-        self.assertEqual(result.success, 1)
-        self.assertEqual(result.failed, 0)
-        self.assertEqual(result.success_items[0]["middle"], str(middle / "m.mp4"))
-
     def test_scan_and_probe(self) -> None:
         make_clip(self.head / "a.mp4", "blue")
         self.assertEqual(len(scan_videos(str(self.head))), 1)

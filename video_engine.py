@@ -451,8 +451,6 @@ class JobConfig:
     output_name_template: str = "output_{序号}_{开头}_{结尾}"
     random_seed: int = 20260905
     dedupe_enabled: bool = True
-    middle_folder: str = ""
-    fixed_middle: Optional[str] = None
 
 
 @dataclass
@@ -482,7 +480,6 @@ def render_output_name(
     index: int,
     head: str,
     tail: str,
-    middle: Optional[str] = None,
 ) -> str:
     def clean(value: str) -> str:
         for ch in '\\/:*?"<>|':
@@ -493,7 +490,6 @@ def render_output_name(
         "{序号}": f"{index:03d}",
         "{开头}": clean(Path(head).stem),
         "{结尾}": clean(Path(tail).stem),
-        "{中间}": clean(Path(middle).stem) if middle else "无",
         "{日期}": time.strftime("%Y%m%d"),
     }
     result = template or "output_{序号}_{开头}_{结尾}"
@@ -514,7 +510,6 @@ def process_batch(
     result = BatchResult()
     head_files = scan_videos(config.head_folder)
     tail_files = scan_videos(config.tail_folder)
-    middle_files = scan_videos(config.middle_folder) if config.middle_folder else []
     if not head_files:
         raise MediaError("开头文件夹中没有找到视频文件。")
     if not tail_files:
@@ -524,8 +519,6 @@ def process_batch(
         raise MediaError("固定开头不在开头文件夹中，请重新选择。")
     if config.fixed_tail and config.fixed_tail not in tail_files:
         raise MediaError("固定结尾不在结尾文件夹中，请重新选择。")
-    if config.fixed_middle and config.fixed_middle not in middle_files:
-        raise MediaError("固定中间素材不在中间文件夹中，请重新选择。")
 
     count = max(1, min(200, int(config.count)))
     if config.fixed_head and config.fixed_tail:
@@ -563,18 +556,14 @@ def process_batch(
             result.cancelled = True
             break
 
-        middle = None
-        if middle_files:
-            middle = config.fixed_middle or middle_files[(idx - 1) % len(middle_files)]
-        final_name = render_output_name(config.output_name_template, idx, head, tail, middle)
+        final_name = render_output_name(config.output_name_template, idx, head, tail)
         final_path = output_dir / final_name
         if skip_existing and final_path.exists() and final_path.stat().st_size > 0:
             result.skipped += 1
             logger(f"[{idx}/{len(combos)}] 已存在，跳过：{final_path}")
             continue
 
-        middle_desc = f" + {Path(middle).name}" if middle else ""
-        logger(f"[{idx}/{len(combos)}] 开始生成：{Path(head).name}{middle_desc} + {Path(tail).name}")
+        logger(f"[{idx}/{len(combos)}] 开始生成：{Path(head).name} + {Path(tail).name}")
         last_error = None
         for attempt in range(retry_count + 1):
             if cancel_event.is_set():
@@ -585,7 +574,6 @@ def process_batch(
                     head,
                     tail,
                     final_path,
-                    middle,
                     width,
                     height,
                     duration_limit,
@@ -596,7 +584,7 @@ def process_batch(
                 )
                 result.success += 1
                 result.success_items.append(
-                    {"index": idx, "head": head, "tail": tail, "middle": middle, "output": str(final_path)}
+                    {"index": idx, "head": head, "tail": tail, "output": str(final_path)}
                 )
                 last_error = None
                 logger(f"[{idx}/{len(combos)}] 完成：{final_path}")
@@ -617,7 +605,6 @@ def process_batch(
                     "index": idx,
                     "head": head,
                     "tail": tail,
-                    "middle": middle,
                     "error": str(last_error),
                 }
             )
@@ -631,51 +618,10 @@ def process_batch(
     return result
 
 
-def concat_three(
-    first: str,
-    second: str,
-    third: str,
-    dst: str,
-    cancel_event,
-    pause_event,
-    log: Optional[Callable[[str], None]] = None,
-) -> None:
-    fc = "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]"
-    args = [
-        _ffmpeg(),
-        "-y",
-        "-i",
-        first,
-        "-i",
-        second,
-        "-i",
-        third,
-        "-filter_complex",
-        fc,
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        dst,
-    ]
-    run_ffmpeg(args, cancel_event, pause_event, log)
-
-
 def _process_one_combo(
     head: str,
     tail: str,
     final_path: Path,
-    middle: Optional[str],
     width: int,
     height: int,
     duration_limit: Optional[float],
@@ -688,10 +634,8 @@ def _process_one_combo(
     try:
         head_info = probe_media(head)
         tail_info = probe_media(tail)
-        middle_info = probe_media(middle) if middle else None
         head_norm = str(tempdir / "head_norm.mp4")
         tail_norm = str(tempdir / "tail_norm.mp4")
-        middle_norm = str(tempdir / "middle_norm.mp4") if middle else None
         concat_path = str(tempdir / "concat.mp4")
         current = concat_path
 
@@ -719,43 +663,19 @@ def _process_one_combo(
             log,
             config.normalize_audio,
         )
-        if middle:
-            normalize_clip(
-                middle,
-                middle_norm,
-                width,
-                height,
-                middle_info["duration"],
-                middle_info["has_audio"],
-                cancel_event,
-                pause_event,
-                log,
-                config.normalize_audio,
-            )
-            concat_three(
-                head_norm,
-                middle_norm,
-                tail_norm,
-                concat_path,
-                cancel_event,
-                pause_event,
-                log,
-            )
-        else:
-            concat_two(
-                head_norm,
-                tail_norm,
-                concat_path,
-                head_info["duration"],
-                tail_info["duration"],
-                config.use_transition,
-                cancel_event,
-                pause_event,
-                log,
-            )
+        concat_two(
+            head_norm,
+            tail_norm,
+            concat_path,
+            head_info["duration"],
+            tail_info["duration"],
+            config.use_transition,
+            cancel_event,
+            pause_event,
+            log,
+        )
 
-        total_duration = head_info["duration"] + (middle_info["duration"] if middle else 0.0) + tail_info["duration"]
-        if duration_limit and total_duration > duration_limit:
+        if duration_limit and head_info["duration"] + tail_info["duration"] > duration_limit:
             trimmed = str(tempdir / "trimmed.mp4")
             trim_duration(concat_path, trimmed, duration_limit, cancel_event, pause_event, log)
             current = trimmed
@@ -764,13 +684,13 @@ def _process_one_combo(
             bgm = config.bgm_path if config.bgm_mode == "本地导入" else str(tempdir / "bgm.wav")
             if config.bgm_mode == "算法生成":
                 log("正在生成背景音乐...")
-                generate_bgm_wav(bgm, max(32.0, total_duration))
+                generate_bgm_wav(bgm, max(32.0, head_info["duration"] + tail_info["duration"]))
             mixed = str(tempdir / "with_bgm.mp4")
             if config.bgm_mode == "本地导入":
                 bgm_info = probe_media(bgm)
                 bgm_duration = bgm_info["duration"]
             else:
-                bgm_duration = max(32.0, total_duration)
+                bgm_duration = max(32.0, head_info["duration"] + tail_info["duration"])
             mix_bgm(
                 current,
                 bgm,
@@ -850,7 +770,6 @@ def process_failed_items(
         idx = int(item.get("index", pos))
         head = str(item.get("head", ""))
         tail = str(item.get("tail", ""))
-        middle = str(item.get("middle") or "")
         if progress:
             progress(pos, len(failed_items))
         if cancel_event.is_set():
@@ -858,11 +777,10 @@ def process_failed_items(
             break
         while pause_event.is_set() and not cancel_event.is_set():
             time.sleep(0.2)
-        final_path = output_dir / render_output_name(config.output_name_template, idx, head, tail, middle or None)
+        final_path = output_dir / render_output_name(config.output_name_template, idx, head, tail)
         if final_path.exists():
             final_path.unlink(missing_ok=True)
-        middle_desc = f" + {Path(middle).name}" if middle else ""
-        logger(f"[{pos}/{len(failed_items)}] 重试：{Path(head).name}{middle_desc} + {Path(tail).name}")
+        logger(f"[{pos}/{len(failed_items)}] 重试：{Path(head).name} + {Path(tail).name}")
         last_error = None
         for attempt in range(retry_count + 1):
             try:
@@ -870,7 +788,6 @@ def process_failed_items(
                     head,
                     tail,
                     final_path,
-                    middle,
                     width,
                     height,
                     duration_limit,
@@ -881,7 +798,7 @@ def process_failed_items(
                 )
                 result.success += 1
                 result.success_items.append(
-                    {"index": idx, "head": head, "tail": tail, "middle": middle, "output": str(final_path)}
+                    {"index": idx, "head": head, "tail": tail, "output": str(final_path)}
                 )
                 last_error = None
                 logger(f"[{pos}/{len(failed_items)}] 重试完成：{final_path}")
@@ -898,7 +815,7 @@ def process_failed_items(
             message = f"[{pos}/{len(failed_items)}] 最终失败：{last_error}"
             result.errors.append(message)
             result.failed_items.append(
-                {"index": idx, "head": head, "tail": tail, "middle": middle or None, "error": str(last_error)}
+                {"index": idx, "head": head, "tail": tail, "error": str(last_error)}
             )
             logger(message)
 
