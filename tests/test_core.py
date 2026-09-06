@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 from imageio_ffmpeg import get_ffmpeg_exe
 
-from video_engine import JobConfig, build_combinations, probe_media, process_batch, scan_videos
+from video_engine import JobConfig, build_combinations, probe_media, process_batch, render_output_name, scan_videos
 
 
 FFMPEG = get_ffmpeg_exe()
@@ -85,6 +85,10 @@ class CorePipelineTests(unittest.TestCase):
         }
         values.update(overrides)
         return JobConfig(**values)
+
+    def test_render_output_name(self) -> None:
+        name = render_output_name("{序号}_{开头}_{结尾}", 3, "head.mp4", "tail.mp4")
+        self.assertEqual(name, "003_head_tail.mp4")
 
     def test_scan_and_probe(self) -> None:
         make_clip(self.head / "a.mp4", "blue")

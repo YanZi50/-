@@ -450,6 +450,7 @@ class Handler(BaseHTTPRequestHandler):
             normalize_audio=bool(payload.get("normalize_audio", False)),
             bgm_fade=bool(payload.get("bgm_fade", False)),
             bgm_ducking=bool(payload.get("bgm_ducking", False)),
+            output_name_template=str(payload.get("output_name_template", "output_{序号}_{开头}_{结尾}")),
         )
 
 

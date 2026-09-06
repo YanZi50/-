@@ -319,6 +319,7 @@
         fixed_head: $('fixed_head').value,
         fixed_tail: $('fixed_tail').value,
         count: $('count').value,
+        output_name_template: $('output_name_template').value,
         resolution: $('resolution').value,
         duration_mode: $('duration_mode').value,
         use_watermark: $('use_watermark').checked,
@@ -341,6 +342,7 @@
       $('fixed_head').value = cfg.fixed_head || '';
       $('fixed_tail').value = cfg.fixed_tail || '';
       $('count').value = cfg.count || 10;
+      $('output_name_template').value = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
       $('resolution').value = cfg.resolution || '1080x1920';
       $('duration_mode').value = cfg.duration_mode || '不限制';
       $('use_watermark').checked = !!cfg.use_watermark;
@@ -381,6 +383,7 @@
         fixed_head: $('fixed_head').value,
         fixed_tail: $('fixed_tail').value,
         count: $('count').value,
+        output_name_template: $('output_name_template').value,
         resolution: $('resolution').value,
         duration_mode: $('duration_mode').value,
         use_watermark: $('use_watermark').checked,

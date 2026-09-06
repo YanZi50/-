@@ -430,6 +430,7 @@ class JobConfig:
     normalize_audio: bool = False
     bgm_fade: bool = False
     bgm_ducking: bool = False
+    output_name_template: str = "output_{序号}_{开头}_{结尾}"
 
 
 @dataclass
@@ -452,6 +453,29 @@ def resolve_resolution(value: str) -> tuple[int, int]:
     if value == "1080x1920":
         return 1080, 1920
     return 1920, 1080
+
+
+def render_output_name(
+    template: str,
+    index: int,
+    head: str,
+    tail: str,
+) -> str:
+    def clean(value: str) -> str:
+        for ch in '\\/:*?"<>|':
+            value = value.replace(ch, "_")
+        return value.strip(" .")
+
+    values = {
+        "{序号}": f"{index:03d}",
+        "{开头}": clean(Path(head).stem),
+        "{结尾}": clean(Path(tail).stem),
+        "{日期}": time.strftime("%Y%m%d"),
+    }
+    result = template or "output_{序号}_{开头}_{结尾}"
+    for key, value in values.items():
+        result = result.replace(key, value)
+    return clean(result) + ".mp4"
 
 
 def process_batch(
@@ -510,7 +534,7 @@ def process_batch(
             result.cancelled = True
             break
 
-        final_name = f"output_{idx:03d}.mp4"
+        final_name = render_output_name(config.output_name_template, idx, head, tail)
         final_path = output_dir / final_name
         if skip_existing and final_path.exists() and final_path.stat().st_size > 0:
             result.skipped += 1
@@ -731,7 +755,7 @@ def process_failed_items(
             break
         while pause_event.is_set() and not cancel_event.is_set():
             time.sleep(0.2)
-        final_path = output_dir / f"output_{idx:03d}.mp4"
+        final_path = output_dir / render_output_name(config.output_name_template, idx, head, tail)
         if final_path.exists():
             final_path.unlink(missing_ok=True)
         logger(f"[{pos}/{len(failed_items)}] 重试：{Path(head).name} + {Path(tail).name}")
