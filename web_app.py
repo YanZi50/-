@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
-from video_engine import BatchResult, JobConfig, MediaError, process_batch, scan_videos
+from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_videos
 
 
 HOST = "127.0.0.1"
@@ -32,6 +32,8 @@ class AppState:
         self.cancel_event = threading.Event()
         self.pause_event = threading.Event()
         self.worker: threading.Thread | None = None
+        self.last_config: JobConfig | None = None
+        self.last_failed_items: list[dict] = []
 
     def add_log(self, message: str) -> None:
         with self.lock:
@@ -52,8 +54,10 @@ class AppState:
                 "total": self.total,
                 "logs": list(self.logs),
                 "success": self.result.success if self.result else 0,
+                "skipped": self.result.skipped if self.result else 0,
                 "failed": self.result.failed if self.result else 0,
                 "cancelled": self.result.cancelled if self.result else False,
+                "failed_items": self.result.failed_items if self.result else [],
                 "error": self.error,
             }
 
@@ -125,6 +129,9 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/start":
             self._start()
+            return
+        if parsed.path == "/api/retry_failed":
+            self._retry_failed()
             return
         if parsed.path == "/api/cancel":
             STATE.cancel_event.set()
@@ -239,6 +246,8 @@ class Handler(BaseHTTPRequestHandler):
 
         STATE.cancel_event.clear()
         STATE.pause_event.clear()
+        STATE.last_config = config
+        STATE.last_failed_items = []
         STATE.result = None
         STATE.error = None
         STATE.current = 0
@@ -264,6 +273,58 @@ class Handler(BaseHTTPRequestHandler):
                     progress=progress,
                 )
                 STATE.result = result
+                STATE.last_failed_items = list(result.failed_items)
+            except MediaError as exc:
+                STATE.error = str(exc)
+                STATE.add_log(str(exc))
+            except Exception as exc:
+                STATE.error = f"程序异常：{exc}"
+                STATE.add_log(STATE.error)
+            finally:
+                STATE.running = False
+
+        STATE.worker = threading.Thread(target=worker, daemon=True)
+        STATE.worker.start()
+        self._send_json({"ok": True})
+
+    def _retry_failed(self) -> None:
+        if STATE.running:
+            self._send_json({"ok": False, "error": "任务正在运行"})
+            return
+        config = STATE.last_config
+        failed_items = STATE.last_failed_items
+        if not config or not failed_items:
+            self._send_json({"ok": False, "error": "没有可重试的失败项"})
+            return
+        STATE.cancel_event.clear()
+        STATE.pause_event.clear()
+        STATE.result = None
+        STATE.error = None
+        STATE.current = 0
+        STATE.total = len(failed_items)
+        STATE.logs = []
+        STATE.paused = False
+        STATE.running = True
+        STATE.add_log(f"开始重试 {len(failed_items)} 个失败项")
+
+        def log(message: str) -> None:
+            STATE.add_log(message)
+
+        def progress(current: int, total: int) -> None:
+            STATE.set_progress(current, total)
+
+        def worker() -> None:
+            try:
+                result = process_failed_items(
+                    config,
+                    failed_items,
+                    STATE.cancel_event,
+                    STATE.pause_event,
+                    log=log,
+                    progress=progress,
+                )
+                STATE.result = result
+                STATE.last_failed_items = list(result.failed_items)
             except MediaError as exc:
                 STATE.error = str(exc)
                 STATE.add_log(str(exc))

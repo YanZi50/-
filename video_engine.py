@@ -415,9 +415,11 @@ class JobConfig:
 @dataclass
 class BatchResult:
     success: int = 0
+    skipped: int = 0
     failed: int = 0
     cancelled: bool = False
     errors: list[str] = field(default_factory=list)
+    failed_items: list[dict] = field(default_factory=list)
 
 
 def resolve_duration_mode(mode: str) -> Optional[float]:
@@ -437,6 +439,8 @@ def process_batch(
     pause_event,
     log: Optional[Callable[[str], None]] = None,
     progress: Optional[Callable[[int, int], None]] = None,
+    retry_count: int = 2,
+    skip_existing: bool = True,
 ) -> BatchResult:
     result = BatchResult()
     head_files = scan_videos(config.head_folder)
@@ -469,6 +473,10 @@ def process_batch(
     width, height = resolve_resolution(config.resolution)
     duration_limit = resolve_duration_mode(config.duration_mode)
 
+    logger = _make_task_logger(log)
+    task_id = time.strftime("%Y%m%d_%H%M%S")
+    logger(f"任务 {task_id} 开始，共 {len(combos)} 条")
+
     for idx, (head, tail) in enumerate(combos, 1):
         if progress:
             progress(idx, len(combos))
@@ -481,108 +489,255 @@ def process_batch(
             result.cancelled = True
             break
 
-        if log:
-            log(f"[{idx}/{len(combos)}] 开始生成：{Path(head).name} + {Path(tail).name}")
-        tempdir = Path(tempfile.mkdtemp(prefix="sppj_"))
-        try:
-            head_info = probe_media(head)
-            tail_info = probe_media(tail)
-            head_norm = str(tempdir / "head_norm.mp4")
-            tail_norm = str(tempdir / "tail_norm.mp4")
-            concat_path = str(tempdir / "concat.mp4")
-            current = concat_path
+        final_name = f"output_{idx:03d}.mp4"
+        final_path = output_dir / final_name
+        if skip_existing and final_path.exists() and final_path.stat().st_size > 0:
+            result.skipped += 1
+            logger(f"[{idx}/{len(combos)}] 已存在，跳过：{final_path}")
+            continue
 
-            normalize_clip(
-                head,
-                head_norm,
-                width,
-                height,
-                head_info["duration"],
-                head_info["has_audio"],
-                cancel_event,
-                pause_event,
-                log,
-            )
-            normalize_clip(
-                tail,
-                tail_norm,
-                width,
-                height,
-                tail_info["duration"],
-                tail_info["has_audio"],
-                cancel_event,
-                pause_event,
-                log,
-            )
-            concat_two(
-                head_norm,
-                tail_norm,
-                concat_path,
-                head_info["duration"],
-                tail_info["duration"],
-                config.use_transition,
-                cancel_event,
-                pause_event,
-                log,
-            )
-
-            if duration_limit and head_info["duration"] + tail_info["duration"] > duration_limit:
-                trimmed = str(tempdir / "trimmed.mp4")
-                trim_duration(concat_path, trimmed, duration_limit, cancel_event, pause_event, log)
-                current = trimmed
-
-            if config.bgm_mode in {"本地导入", "算法生成"}:
-                bgm = config.bgm_path if config.bgm_mode == "本地导入" else str(tempdir / "bgm.wav")
-                if config.bgm_mode == "算法生成":
-                    if log:
-                        log("正在生成背景音乐...")
-                    generate_bgm_wav(bgm, max(32.0, head_info["duration"] + tail_info["duration"]))
-                mixed = str(tempdir / "with_bgm.mp4")
-                mix_bgm(
-                    current,
-                    bgm,
-                    mixed,
-                    float(config.bgm_volume),
+        logger(f"[{idx}/{len(combos)}] 开始生成：{Path(head).name} + {Path(tail).name}")
+        last_error = None
+        for attempt in range(retry_count + 1):
+            if cancel_event.is_set():
+                result.cancelled = True
+                break
+            try:
+                _process_one_combo(
+                    head,
+                    tail,
+                    final_path,
+                    width,
+                    height,
+                    duration_limit,
+                    config,
                     cancel_event,
                     pause_event,
-                    log,
+                    logger,
                 )
-                current = mixed
-
-            if config.use_watermark:
-                if not config.watermark_path:
-                    raise MediaError("已勾选水印，但未选择水印图片。")
-                watermarked = str(tempdir / "with_watermark.mp4")
-                apply_watermark(
-                    current,
-                    config.watermark_path,
-                    watermarked,
-                    cancel_event,
-                    pause_event,
-                    log,
-                )
-                current = watermarked
-
-            final_name = _unique_output_name(output_dir, idx)
-            final_path = output_dir / final_name
-            shutil.move(current, final_path)
-            result.success += 1
-            if log:
-                log(f"[{idx}/{len(combos)}] 完成：{final_path}")
-        except CancelledError:
-            result.cancelled = True
-            break
-        except Exception as exc:
+                result.success += 1
+                last_error = None
+                logger(f"[{idx}/{len(combos)}] 完成：{final_path}")
+                break
+            except CancelledError:
+                raise
+            except Exception as exc:
+                last_error = exc
+                logger(f"[{idx}/{len(combos)}] 第 {attempt + 1} 次失败：{exc}")
+                if attempt < retry_count:
+                    time.sleep(1)
+        else:
             result.failed += 1
-            message = f"[{idx}/{len(combos)}] 失败：{exc}"
+            message = f"[{idx}/{len(combos)}] 最终失败：{last_error}"
             result.errors.append(message)
-            if log:
-                log(message)
-        finally:
-            shutil.rmtree(tempdir, ignore_errors=True)
+            result.failed_items.append(
+                {
+                    "index": idx,
+                    "head": head,
+                    "tail": tail,
+                    "error": str(last_error),
+                }
+            )
+            logger(message)
 
     if progress:
         progress(len(combos), len(combos))
+    logger(
+        f"任务 {task_id} 结束：成功 {result.success}，跳过 {result.skipped}，失败 {result.failed}"
+    )
+    return result
+
+
+def _process_one_combo(
+    head: str,
+    tail: str,
+    final_path: Path,
+    width: int,
+    height: int,
+    duration_limit: Optional[float],
+    config: JobConfig,
+    cancel_event,
+    pause_event,
+    log: Callable[[str], None],
+) -> None:
+    tempdir = Path(tempfile.mkdtemp(prefix="sppj_"))
+    try:
+        head_info = probe_media(head)
+        tail_info = probe_media(tail)
+        head_norm = str(tempdir / "head_norm.mp4")
+        tail_norm = str(tempdir / "tail_norm.mp4")
+        concat_path = str(tempdir / "concat.mp4")
+        current = concat_path
+
+        normalize_clip(
+            head,
+            head_norm,
+            width,
+            height,
+            head_info["duration"],
+            head_info["has_audio"],
+            cancel_event,
+            pause_event,
+            log,
+        )
+        normalize_clip(
+            tail,
+            tail_norm,
+            width,
+            height,
+            tail_info["duration"],
+            tail_info["has_audio"],
+            cancel_event,
+            pause_event,
+            log,
+        )
+        concat_two(
+            head_norm,
+            tail_norm,
+            concat_path,
+            head_info["duration"],
+            tail_info["duration"],
+            config.use_transition,
+            cancel_event,
+            pause_event,
+            log,
+        )
+
+        if duration_limit and head_info["duration"] + tail_info["duration"] > duration_limit:
+            trimmed = str(tempdir / "trimmed.mp4")
+            trim_duration(concat_path, trimmed, duration_limit, cancel_event, pause_event, log)
+            current = trimmed
+
+        if config.bgm_mode in {"本地导入", "算法生成"}:
+            bgm = config.bgm_path if config.bgm_mode == "本地导入" else str(tempdir / "bgm.wav")
+            if config.bgm_mode == "算法生成":
+                log("正在生成背景音乐...")
+                generate_bgm_wav(bgm, max(32.0, head_info["duration"] + tail_info["duration"]))
+            mixed = str(tempdir / "with_bgm.mp4")
+            mix_bgm(
+                current,
+                bgm,
+                mixed,
+                float(config.bgm_volume),
+                cancel_event,
+                pause_event,
+                log,
+            )
+            current = mixed
+
+        if config.use_watermark:
+            if not config.watermark_path:
+                raise MediaError("已勾选水印，但未选择水印图片。")
+            watermarked = str(tempdir / "with_watermark.mp4")
+            apply_watermark(
+                current,
+                config.watermark_path,
+                watermarked,
+                cancel_event,
+                pause_event,
+                log,
+            )
+            current = watermarked
+
+        shutil.move(current, final_path)
+    finally:
+        shutil.rmtree(tempdir, ignore_errors=True)
+
+
+def _make_task_logger(
+    callback: Optional[Callable[[str], None]],
+) -> Callable[[str], None]:
+    if getattr(sys, "frozen", False):
+        log_dir = Path(sys.executable).resolve().parent / "logs"
+    else:
+        log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / f"task_{time.strftime('%Y%m%d_%H%M%S')}.log"
+
+    def write(message: str) -> None:
+        line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}"
+        if callback:
+            callback(line)
+        try:
+            with log_file.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
+    return write
+
+
+def process_failed_items(
+    config: JobConfig,
+    failed_items: list[dict],
+    cancel_event,
+    pause_event,
+    log: Optional[Callable[[str], None]] = None,
+    progress: Optional[Callable[[int, int], None]] = None,
+    retry_count: int = 2,
+) -> BatchResult:
+    result = BatchResult()
+    if not failed_items:
+        return result
+    output_dir = Path(config.output_folder or Path(config.head_folder).parent / "output")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    width, height = resolve_resolution(config.resolution)
+    duration_limit = resolve_duration_mode(config.duration_mode)
+    logger = _make_task_logger(log)
+    logger(f"开始重试失败项，共 {len(failed_items)} 条")
+
+    for pos, item in enumerate(failed_items, 1):
+        idx = int(item.get("index", pos))
+        head = str(item.get("head", ""))
+        tail = str(item.get("tail", ""))
+        if progress:
+            progress(pos, len(failed_items))
+        if cancel_event.is_set():
+            result.cancelled = True
+            break
+        while pause_event.is_set() and not cancel_event.is_set():
+            time.sleep(0.2)
+        final_path = output_dir / f"output_{idx:03d}.mp4"
+        if final_path.exists():
+            final_path.unlink(missing_ok=True)
+        logger(f"[{pos}/{len(failed_items)}] 重试：{Path(head).name} + {Path(tail).name}")
+        last_error = None
+        for attempt in range(retry_count + 1):
+            try:
+                _process_one_combo(
+                    head,
+                    tail,
+                    final_path,
+                    width,
+                    height,
+                    duration_limit,
+                    config,
+                    cancel_event,
+                    pause_event,
+                    logger,
+                )
+                result.success += 1
+                last_error = None
+                logger(f"[{pos}/{len(failed_items)}] 重试完成：{final_path}")
+                break
+            except CancelledError:
+                raise
+            except Exception as exc:
+                last_error = exc
+                logger(f"[{pos}/{len(failed_items)}] 第 {attempt + 1} 次失败：{exc}")
+                if attempt < retry_count:
+                    time.sleep(1)
+        else:
+            result.failed += 1
+            message = f"[{pos}/{len(failed_items)}] 最终失败：{last_error}"
+            result.errors.append(message)
+            result.failed_items.append(
+                {"index": idx, "head": head, "tail": tail, "error": str(last_error)}
+            )
+            logger(message)
+
+    if progress:
+        progress(len(failed_items), len(failed_items))
     return result
 
 

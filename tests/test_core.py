@@ -144,6 +144,15 @@ class CorePipelineTests(unittest.TestCase):
         self.assertEqual(result.failed, 1)
         self.assertTrue(result.errors)
 
+    def test_skip_existing_output(self) -> None:
+        make_clip(self.head / "h.mp4", "blue")
+        make_clip(self.tail / "t.mp4", "red")
+        first = process_batch(self._config(count=1), threading.Event(), threading.Event())
+        self.assertEqual(first.success, 1)
+        second = process_batch(self._config(count=1), threading.Event(), threading.Event())
+        self.assertEqual(second.skipped, 1)
+        self.assertEqual(second.success, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

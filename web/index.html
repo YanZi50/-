@@ -192,7 +192,7 @@
       <div class="actions">
         <button id="start_btn" onclick="startJob()">开始生成</button>
         <button id="pause_btn" class="secondary" onclick="togglePause()" disabled>暂停</button>
-        <button id="cancel_btn" class="danger" onclick="cancelJob()" disabled>取消</button>
+        <button id="cancel_btn" class="danger" onclick="cancelJob()" disabled>取消</button><button id="retry_btn" class="secondary" onclick="retryFailed()" disabled>重试失败项</button>
         <span id="status" class="status">就绪</span>
       </div>
       <div class="progress-wrap"><div id="progress" class="progress-inner"></div></div>
@@ -318,6 +318,16 @@
       else {
         $('log').textContent = '';
         $('status').textContent = '运行中';
+        updateButtons();
+      }
+    }
+
+    async function retryFailed() {
+      const data = await api('/api/retry_failed', { method: 'POST' });
+      if (!data.ok) alert(data.error || '没有可重试的失败项');
+      else {
+        $('log').textContent = '';
+        $('status').textContent = '重试中';
         updateButtons();
       }
     }
