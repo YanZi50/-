@@ -402,19 +402,29 @@
       $('pause_btn').textContent = paused ? '继续' : '暂停';
     }
 
-    async function loadOutputFiles(folder) {
-      if (!folder || outputLoaded) return;
-      const data = await api('/api/list_output?folder=' + encodeURIComponent(folder));
-      const files = data.files || [];
+    function renderResults(state) {
+      if (outputLoaded) return;
       const box = $('output_files');
-      if (!files.length) {
-        box.innerHTML = '<div class="hint">还没有输出文件</div>';
+      const rows = [];
+      (state.success_items || []).forEach((item) => {
+        const folder = lastOutputFolder || item.output.replace(/[\\/][^\\/]+$/, '');
+        const name = item.output.split(/[\\/]/).pop();
+        const url = '/api/download?folder=' + encodeURIComponent(folder) + '&name=' + encodeURIComponent(name);
+        rows.push(`<tr><td>${item.index}</td><td>${escapeHtml(item.head)}</td><td>${escapeHtml(item.tail)}</td><td>成功</td><td><a href="${url}" download>下载</a></td><td></td></tr>`);
+      });
+      (state.failed_items || []).forEach((item) => {
+        rows.push(`<tr><td>${item.index}</td><td>${escapeHtml(item.head)}</td><td>${escapeHtml(item.tail)}</td><td>失败</td><td></td><td>${escapeHtml(item.error || '')}</td></tr>`);
+      });
+      if (!rows.length) {
+        box.innerHTML = '<div class="hint">暂无结果明细</div>';
       } else {
-        box.innerHTML = '<strong>输出文件</strong><div>' + files.map((f) => {
-          return `<a href="${f.url}" download>${f.name}</a>`;
-        }).join(' &nbsp;|&nbsp; ') + '</div>';
+        box.innerHTML = '<strong>结果明细</strong><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;margin-top:8px;"><thead><tr><th>序号</th><th>开头</th><th>结尾</th><th>状态</th><th>输出</th><th>失败原因</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
       }
       outputLoaded = true;
+    }
+
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>"]/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
     }
 
     function updateButtons() {
@@ -442,7 +452,7 @@
           else if (state.success !== undefined) $('status').textContent = `已完成：成功 ${state.success}，失败 ${state.failed}`;
         }
         if (!state.running && !state.error && state.success > 0) {
-          loadOutputFiles(lastOutputFolder);
+          renderResults(state);
         }
       } catch (e) {
         $('status').textContent = '服务连接失败';

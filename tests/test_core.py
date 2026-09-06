@@ -108,6 +108,7 @@ class CorePipelineTests(unittest.TestCase):
         self.assertEqual(result.success, 2)
         self.assertEqual(result.failed, 0)
         self.assertEqual(len(list(self.output.glob("*.mp4"))), 2)
+        self.assertEqual(len(result.success_items), 2)
 
     def test_watermark_and_algorithm_bgm(self) -> None:
         make_clip_with_audio(self.head / "h.mp4", "blue")

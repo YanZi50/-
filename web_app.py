@@ -60,6 +60,7 @@ class AppState:
                 "failed": self.result.failed if self.result else 0,
                 "cancelled": self.result.cancelled if self.result else False,
                 "failed_items": self.result.failed_items if self.result else [],
+                "success_items": self.result.success_items if self.result else [],
                 "error": self.error,
             }
 

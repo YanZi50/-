@@ -420,6 +420,7 @@ class BatchResult:
     cancelled: bool = False
     errors: list[str] = field(default_factory=list)
     failed_items: list[dict] = field(default_factory=list)
+    success_items: list[dict] = field(default_factory=list)
 
 
 def resolve_duration_mode(mode: str) -> Optional[float]:
@@ -516,6 +517,9 @@ def process_batch(
                     logger,
                 )
                 result.success += 1
+                result.success_items.append(
+                    {"index": idx, "head": head, "tail": tail, "output": str(final_path)}
+                )
                 last_error = None
                 logger(f"[{idx}/{len(combos)}] 完成：{final_path}")
                 break
@@ -717,6 +721,9 @@ def process_failed_items(
                     logger,
                 )
                 result.success += 1
+                result.success_items.append(
+                    {"index": idx, "head": head, "tail": tail, "output": str(final_path)}
+                )
                 last_error = None
                 logger(f"[{pos}/{len(failed_items)}] 重试完成：{final_path}")
                 break
