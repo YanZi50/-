@@ -14,6 +14,8 @@ from typing import Callable, Iterable, Optional
 import numpy as np
 from imageio_ffmpeg import get_ffmpeg_exe
 
+import subtitle_plugin
+
 
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".ts", ".m4v", ".webm", ".flv", ".wmv"}
 AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
@@ -341,6 +343,41 @@ def generate_bgm_wav(dst: str, duration: float = 32.0, sample_rate: int = 44100)
         wf.writeframes(pcm.tobytes())
 
 
+def burn_subtitles(
+    src: str,
+    srt: str,
+    dst: str,
+    cancel_event,
+    pause_event,
+    log: Optional[Callable[[str], None]] = None,
+) -> None:
+    escaped = escape_filter_path(srt)
+    style = (
+        "FontName=Microsoft YaHei,FontSize=16,"
+        "PrimaryColour=&H00FFFFFF,OutlineColour=&H80000000,"
+        "BorderStyle=1,Outline=1,Shadow=0,Alignment=2,MarginV=28"
+    )
+    vf = f"subtitles=filename='{escaped}':force_style='{style}'"
+    args = [
+        _ffmpeg(),
+        "-y",
+        "-i",
+        src,
+        "-vf",
+        vf,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-c:a",
+        "copy",
+        dst,
+    ]
+    run_ffmpeg(args, cancel_event, pause_event, log)
+
+
 def apply_watermark(
     src: str,
     watermark: str,
@@ -453,6 +490,7 @@ class JobConfig:
     dedupe_enabled: bool = True
     middle_folder: str = ""
     fixed_middle: Optional[str] = None
+    use_subtitle: bool = False
 
 
 @dataclass
@@ -784,6 +822,22 @@ def _process_one_combo(
                 bgm_duration=bgm_duration,
             )
             current = mixed
+
+        if config.use_subtitle:
+            if not subtitle_plugin.available():
+                raise subtitle_plugin.SubtitleUnavailableError(
+                    "自动字幕需要 faster-whisper。请运行：pip install faster-whisper"
+                )
+            srt_path = str(tempdir / "subtitle.srt")
+            subtitle_plugin.generate_subtitles(
+                head,
+                tail,
+                head_info["duration"],
+                srt_path,
+            )
+            subtitled = str(tempdir / "with_subtitle.mp4")
+            burn_subtitles(current, srt_path, subtitled, cancel_event, pause_event, log)
+            current = subtitled
 
         if config.use_watermark:
             if not config.watermark_path:

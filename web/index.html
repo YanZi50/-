@@ -341,6 +341,7 @@
         use_watermark: $('use_watermark').checked,
         watermark_path: $('watermark_path').value.trim(),
         use_transition: $('use_transition').checked,
+        use_subtitle: $('use_subtitle').checked,
         bgm_mode: $('bgm_mode').value,
         bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,
@@ -368,6 +369,7 @@
       $('use_watermark').checked = !!cfg.use_watermark;
       $('watermark_path').value = cfg.watermark_path || '';
       $('use_transition').checked = !!cfg.use_transition;
+      $('use_subtitle').checked = !!cfg.use_subtitle;
       $('bgm_mode').value = cfg.bgm_mode || '不使用';
       $('bgm_path').value = cfg.bgm_path || '';
       $('bgm_volume').value = cfg.bgm_volume || 0.2;
@@ -429,6 +431,7 @@
         use_watermark: $('use_watermark').checked,
         watermark_path: $('watermark_path').value.trim(),
         use_transition: $('use_transition').checked,
+        use_subtitle: $('use_subtitle').checked,
         bgm_mode: $('bgm_mode').value,
         bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,

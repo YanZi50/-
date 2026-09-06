@@ -11,6 +11,7 @@ from config_store import load_last_config, save_last_config
 from history_store import list_history, save_history
 from template_store import delete_template, list_templates, load_template, save_template
 from platform_presets import apply_preset, get_presets
+import subtitle_plugin
 
 from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_videos
 
@@ -517,6 +518,9 @@ class Handler(BaseHTTPRequestHandler):
             return "出片数量必须是 1–200 之间的整数"
 
         use_watermark = bool(payload.get("use_watermark", False))
+        use_subtitle = bool(payload.get("use_subtitle", False))
+        if use_subtitle and not subtitle_plugin.available():
+            return "自动字幕需要 faster-whisper，请先运行：pip install faster-whisper"
         watermark_path = str(payload.get("watermark_path", "")).strip()
         if use_watermark and not watermark_path:
             return "已勾选水印，请填写水印图片路径"
@@ -549,6 +553,7 @@ class Handler(BaseHTTPRequestHandler):
             dedupe_enabled=bool(payload.get("dedupe_enabled", True)),
             middle_folder=str(payload.get("middle_folder", "")).strip(),
             fixed_middle=str(payload.get("fixed_middle") or "").strip() or None,
+            use_subtitle=use_subtitle,
         )
 
 
