@@ -271,7 +271,7 @@
         <button id="start_btn" onclick="startJob()">开始生成</button><button class="secondary" onclick="previewJob()">生成预览</button>
         <button id="pause_btn" class="secondary" onclick="togglePause()" disabled>暂停</button>
         <button id="cancel_btn" class="danger" onclick="cancelJob()" disabled>取消</button><button id="retry_btn" class="secondary" onclick="retryFailed()" disabled>重试失败项</button>
-        <span id="status" class="status">就绪</span>
+        <span id="status" class="status">就绪</span><div id="message_box" class="hint" style="min-height:18px;"></div>
       </div>
       <div class="progress-wrap"><div id="progress" class="progress-inner"></div></div>
       <div class="log" id="log"></div>
@@ -289,6 +289,15 @@
   <script>
     const $ = (id) => document.getElementById(id);
     let paused = false;
+
+    function showMessage(message, type = 'info') {
+      const box = $('message_box');
+      if (!box) return;
+      box.textContent = message;
+      box.style.color = type === 'error' ? '#b91c1c' : '#2563eb';
+      clearTimeout(window.__msgTimer);
+      window.__msgTimer = setTimeout(() => { box.textContent = ''; }, 6000);
+    }
     let lastOutputFolder = '';
     let outputLoaded = false;
 
@@ -327,8 +336,14 @@
         const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
         if (data.path) {
           const full = data.path + '\\' + file.name;
-          if (kind === 'watermark') $('watermark_path').value = full;
-          if (kind === 'bgm') $('bgm_path').value = full;
+          if (kind === 'watermark') {
+            $('watermark_path').value = full;
+            showMessage('水印已选择：' + file.name);
+          }
+          if (kind === 'bgm') {
+            $('bgm_path').value = full;
+            showMessage('音乐已选择：' + file.name);
+          }
         }
       };
       input.click();
@@ -441,13 +456,13 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(collectConfig()),
       });
-      alert(data.ok ? '配置已保存' : (data.error || '保存失败'));
+      showMessage(data.ok ? '配置已保存' : (data.error || '保存失败'));
     }
 
     async function loadConfig() {
       const cfg = await api('/api/config/load');
       if (!cfg || !Object.keys(cfg).length) {
-        alert('还没有保存过配置');
+        showMessage('还没有保存过配置');
         return;
       }
       applyConfig(cfg);
@@ -460,7 +475,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!data.ok) alert(data.error || '预览失败');
+      if (!data.ok) showMessage(data.error || '预览失败');
       else {
         $('log').textContent = '';
         $('preview_box').innerHTML = '';
@@ -503,7 +518,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (!data.ok) alert(data.error || '启动失败');
+      if (!data.ok) showMessage(data.error || '启动失败');
       else {
         $('log').textContent = '';
         $('status').textContent = '运行中';
@@ -513,7 +528,7 @@
 
     async function retryFailed() {
       const data = await api('/api/retry_failed', { method: 'POST' });
-      if (!data.ok) alert(data.error || '没有可重试的失败项');
+      if (!data.ok) showMessage(data.error || '没有可重试的失败项');
       else {
         $('log').textContent = '';
         $('status').textContent = '重试中';
@@ -591,44 +606,44 @@
 
     async function saveTemplate() {
       const name = $('template_name').value.trim();
-      if (!name) { alert('请填写模板名称'); return; }
+      if (!name) { showMessage('请填写模板名称'); return; }
       const data = await api('/api/templates/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, config: collectConfig() }),
       });
-      alert(data.ok ? '模板已保存' : (data.error || '保存失败'));
+      showMessage(data.ok ? '模板已保存' : (data.error || '保存失败'));
       refreshTemplates();
     }
 
     async function loadTemplate() {
       const name = $('template_name').value.trim();
-      if (!name) { alert('请填写要载入的模板名称'); return; }
+      if (!name) { showMessage('请填写要载入的模板名称'); return; }
       const cfg = await api('/api/templates/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
       if (cfg && Object.keys(cfg).length) applyConfig(cfg);
-      else alert('模板不存在');
+      else showMessage('模板不存在');
     }
 
     async function deleteTemplate() {
       const name = $('template_name').value.trim();
-      if (!name) { alert('请填写要删除的模板名称'); return; }
+      if (!name) { showMessage('请填写要删除的模板名称'); return; }
       const data = await api('/api/templates/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
-      alert(data.ok ? '模板已删除' : '模板不存在');
+      showMessage(data.ok ? '模板已删除' : '模板不存在');
       refreshTemplates();
     }
 
     async function clearHistory() {
       if (!confirm('确定要清空所有任务历史记录吗？')) return;
       const data = await api('/api/history/clear');
-      alert(data.ok ? '已清空历史记录' : '清空失败');
+      showMessage(data.ok ? '已清空历史记录' : '清空失败');
       loadHistory();
     }
 
