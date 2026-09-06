@@ -201,8 +201,8 @@
       <h2>效果选项</h2>
       <div class="row">
         <label><input id="use_watermark" type="checkbox"> 添加水印</label>
-        <input id="watermark_path" type="text" placeholder="水印图片路径">
-        <button class="secondary" onclick="uploadSingle('watermark')">上传</button>
+        <input id="watermark_path" type="text" placeholder="例如：D:\水印\logo.png">
+        <label for="watermark_upload" class="secondary" style="padding:9px 14px;border-radius:8px;cursor:pointer;background:#eef2ff;color:#1e3a8a;">选择PNG</label>
       </div>
       <div class="row plain">
         <label><input id="use_transition" type="checkbox"> 添加转场</label>
@@ -283,7 +283,7 @@
   <input id="head_upload" type="file" webkitdirectory hidden>
   <input id="tail_upload" type="file" webkitdirectory hidden>
   <input id="middle_upload" type="file" webkitdirectory hidden>
-  <input id="watermark_upload" type="file" accept="image/*" hidden>
+  <input id="watermark_upload" type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="watermarkSelected(this)">
   <input id="bgm_upload" type="file" accept="audio/*" hidden>
 
   <script>
@@ -324,6 +324,18 @@
         }
       };
       input.click();
+    }
+
+    async function watermarkSelected(input) {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      await uploadFiles('watermark', [file]);
+      const data = await api('/api/upload_path?kind=watermark');
+      if (data.path) {
+        const full = data.path + '\\' + file.name;
+        $('watermark_path').value = full;
+        showMessage('水印已选择：' + file.name);
+      }
     }
 
     function uploadSingle(kind) {
