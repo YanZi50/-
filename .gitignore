@@ -7,3 +7,6 @@ bin/
 *.spec
 
 logs/
+
+configs/
+history/
