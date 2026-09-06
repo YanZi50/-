@@ -108,12 +108,15 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             head = (query.get("head") or [""])[0]
             tail = (query.get("tail") or [""])[0]
+            middle = (query.get("middle") or [""])[0]
             head_files = scan_videos(head)
             tail_files = scan_videos(tail)
+            middle_files = scan_videos(middle)
             self._send_json(
                 {
                     "head": [{"name": Path(p).name, "path": p} for p in head_files],
                     "tail": [{"name": Path(p).name, "path": p} for p in tail_files],
+                    "middle": [{"name": Path(p).name, "path": p} for p in middle_files],
                 }
             )
             return
@@ -168,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
             folder = UPLOAD_ROOT / "head"
         elif kind == "tail":
             folder = UPLOAD_ROOT / "tail"
+        elif kind == "middle":
+            folder = UPLOAD_ROOT / "middle"
         elif kind in {"watermark", "bgm"}:
             folder = UPLOAD_ROOT / "files"
         else:
@@ -453,6 +458,8 @@ class Handler(BaseHTTPRequestHandler):
             output_name_template=str(payload.get("output_name_template", "output_{序号}_{开头}_{结尾}")),
             random_seed=int(payload.get("random_seed", 20260905)),
             dedupe_enabled=bool(payload.get("dedupe_enabled", True)),
+            middle_folder=str(payload.get("middle_folder", "")).strip(),
+            fixed_middle=str(payload.get("fixed_middle") or "").strip() or None,
         )
 
 
