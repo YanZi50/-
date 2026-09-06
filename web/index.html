@@ -294,12 +294,19 @@
       const head = $('head_folder').value.trim();
       const tail = $('tail_folder').value.trim();
       const middle = $('middle_folder').value.trim();
-      if (!head || !tail) return;
-      const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail) + '&middle=' + encodeURIComponent(middle));
-      fillSelect('fixed_head', data.head || []);
-      fillSelect('fixed_tail', data.tail || []);
-      fillSelect('fixed_middle', data.middle || []);
-      $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个，中间 ${data.middle.length} 个`;
+      if (!head || !tail) {
+        $('scan_hint').textContent = '请先填写开头文件夹和结尾文件夹';
+        return;
+      }
+      try {
+        const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail) + '&middle=' + encodeURIComponent(middle));
+        fillSelect('fixed_head', data.head || []);
+        fillSelect('fixed_tail', data.tail || []);
+        fillSelect('fixed_middle', data.middle || []);
+        $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个，中间 ${data.middle.length} 个`;
+      } catch (e) {
+        $('scan_hint').textContent = '扫描失败：' + e.message;
+      }
     }
 
     function fillSelect(id, items) {
@@ -519,6 +526,9 @@
       }
     }
 
+    ['head_folder', 'tail_folder', 'middle_folder'].forEach((id) => {
+      $(id).addEventListener('change', scanMaterials);
+    });
     setInterval(poll, 1000);
     poll();
     (async () => {
