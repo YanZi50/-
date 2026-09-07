@@ -107,6 +107,7 @@
           <button class="select-btn" onclick="selectFolder('head')">选择</button>
           <button class="secondary" onclick="uploadFolder('head')">上传</button>
         </div>
+        <span id="head_count" class="hint"></span>
       </div>
       <div class="row">
         <label>结尾文件夹</label>
@@ -115,6 +116,7 @@
           <button class="select-btn" onclick="selectFolder('tail')">选择</button>
           <button class="secondary" onclick="uploadFolder('tail')">上传</button>
         </div>
+        <span id="tail_count" class="hint"></span>
       </div>
       <div class="row">
         <label>中间文件夹</label>
@@ -123,6 +125,7 @@
           <button class="select-btn" onclick="selectFolder('middle')">选择</button>
           <button class="secondary" onclick="uploadFolder('middle')">上传</button>
         </div>
+        <span id="middle_count" class="hint"></span>
       </div>
       <div class="row plain">
         <label>固定开头</label>
@@ -135,10 +138,6 @@
       <div class="row plain">
         <label>固定中间</label>
         <select id="fixed_middle"><option value="">不固定</option></select>
-      </div>
-      <div class="actions">
-        <button class="secondary" onclick="scanMaterials()">扫描素材</button>
-        <span id="scan_hint" class="hint"></span>
       </div>
     </section>
 
@@ -269,6 +268,7 @@
         <div class="button-group">
           <button class="select-btn" onclick="selectFolder('bgm')">选择</button>
         </div>
+        <span id="bgm_count" class="hint"></span>
       </div>
       <div class="row plain">
         <label>固定 BGM</label>
@@ -455,19 +455,18 @@
       const tail = $('tail_folder').value.trim();
       const middle = $('middle_folder').value.trim();
       const bgm = $('bgm_folder').value.trim();
-      if (!head || !tail) {
-        $('scan_hint').textContent = '请先填写开头文件夹和结尾文件夹';
-        return;
-      }
       try {
         const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail) + '&middle=' + encodeURIComponent(middle) + '&bgm=' + encodeURIComponent(bgm));
         fillSelect('fixed_head', data.head || []);
         fillSelect('fixed_tail', data.tail || []);
         fillSelect('fixed_middle', data.middle || []);
-      fillSelect('fixed_bgm', data.bgm || []);
-        $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个，中间 ${data.middle.length} 个，音乐 ${data.bgm.length} 个`;
+        fillSelect('fixed_bgm', data.bgm || []);
+        $('head_count').textContent = (data.head || []).length ? (data.head || []).length + ' 个' : '';
+        $('tail_count').textContent = (data.tail || []).length ? (data.tail || []).length + ' 个' : '';
+        $('middle_count').textContent = (data.middle || []).length ? (data.middle || []).length + ' 个' : '';
+        $('bgm_count').textContent = (data.bgm || []).length ? (data.bgm || []).length + ' 个' : '';
       } catch (e) {
-        $('scan_hint').textContent = '扫描失败：' + e.message;
+        showMessage('素材扫描失败：' + e.message, 'error');
       }
     }
 
@@ -797,7 +796,7 @@
       }
     }
 
-    ['head_folder', 'tail_folder', 'middle_folder'].forEach((id) => {
+    ['head_folder', 'tail_folder', 'middle_folder', 'bgm_folder'].forEach((id) => {
       $(id).addEventListener('change', scanMaterials);
     });
     setInterval(poll, 1000);
