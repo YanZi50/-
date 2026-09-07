@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 import threading
 from dataclasses import asdict
@@ -72,6 +73,28 @@ class AppState:
             }
 
 
+def run_folder_dialog(description: str) -> str:
+    script = f"""
+Add-Type -AssemblyName System.Windows.Forms
+$d = New-Object System.Windows.Forms.FolderBrowserDialog
+$d.Description = '{description}'
+$d.ShowNewFolderButton = $true
+if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.SelectedPath }}
+"""
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+        )
+        return (proc.stdout or "").strip()
+    except Exception:
+        return ""
+
+
 STATE = AppState()
 
 
@@ -138,6 +161,18 @@ class Handler(BaseHTTPRequestHandler):
                     "middle": [{"name": Path(p).name, "path": p} for p in middle_files],
                 }
             )
+            return
+        if parsed.path == "/api/select_folder":
+            query = parse_qs(parsed.query)
+            name = (query.get("name") or ["head"])[0]
+            desc = {
+                "head": "选择开头素材文件夹",
+                "tail": "选择结尾素材文件夹",
+                "middle": "选择中间素材文件夹",
+                "output": "选择输出路径",
+            }.get(name, "选择文件夹")
+            path = run_folder_dialog(desc)
+            self._send_json({"path": path})
             return
         if parsed.path == "/api/upload_path":
             query = parse_qs(parsed.query)
@@ -279,9 +314,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "video/mp4")
         self.send_header("Content-Length", str(len(data)))
+        filename = Path(name).name
+        ascii_name = filename.encode("ascii", "ignore").decode() or "download.mp4"
         self.send_header(
             "Content-Disposition",
-            f'attachment; filename="{Path(name).name}"',
+            f'attachment; filename="{ascii_name}"',
         )
         self.end_headers()
         self.wfile.write(data)
@@ -514,7 +551,7 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.isdir(head_folder) or not os.path.isdir(tail_folder):
             return "素材文件夹不存在，请检查路径"
         if not output_folder:
-            output_folder = str(Path(head_folder).parent / "output")
+            return "请选择输出路径"
         try:
             count = max(1, min(200, int(payload.get("count", 10))))
         except Exception:

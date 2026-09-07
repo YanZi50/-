@@ -104,6 +104,7 @@
         <label>开头文件夹</label>
         <input id="head_folder" type="text" placeholder="例如：D:\素材\开头">
         <div class="button-group">
+          <button onclick="selectFolder('head')">选择</button>
           <button class="secondary" onclick="uploadFolder('head')">上传</button>
         </div>
       </div>
@@ -111,6 +112,7 @@
         <label>结尾文件夹</label>
         <input id="tail_folder" type="text" placeholder="例如：D:\素材\结尾">
         <div class="button-group">
+          <button onclick="selectFolder('tail')">选择</button>
           <button class="secondary" onclick="uploadFolder('tail')">上传</button>
         </div>
       </div>
@@ -118,6 +120,7 @@
         <label>中间文件夹</label>
         <input id="middle_folder" type="text" placeholder="可选：D:\素材\中间">
         <div class="button-group">
+          <button onclick="selectFolder('middle')">选择</button>
           <button class="secondary" onclick="uploadFolder('middle')">上传</button>
         </div>
       </div>
@@ -143,7 +146,8 @@
       <h2>输出设置</h2>
       <div class="row">
         <label>输出目录</label>
-        <input id="output_folder" type="text" placeholder="不填则自动放在开头文件夹同级 output">
+        <input id="output_folder" type="text" placeholder="请选择输出路径（必填）">
+        <button onclick="selectFolder('output')">选择</button>
       </div>
       <div class="row plain">
         <label>出片数量</label>
@@ -304,6 +308,19 @@
     async function api(path, options = {}) {
       const resp = await fetch(path, options);
       return resp.json();
+    }
+
+    async function selectFolder(name) {
+      const data = await api('/api/select_folder?name=' + encodeURIComponent(name));
+      if (!data.path) return;
+      if (name === 'head') $('head_folder').value = data.path;
+      if (name === 'tail') $('tail_folder').value = data.path;
+      if (name === 'middle') $('middle_folder').value = data.path;
+      if (name === 'output') {
+        $('output_folder').value = data.path;
+        showMessage('输出路径已选择');
+      }
+      if (name === 'head' || name === 'tail' || name === 'middle') scanMaterials();
     }
 
     function uploadFolder(kind) {
