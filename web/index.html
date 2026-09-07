@@ -209,8 +209,47 @@
         <label for="watermark_upload" class="secondary" style="padding:9px 14px;border-radius:8px;cursor:pointer;background:#eef2ff;color:#1e3a8a;">选择PNG</label>
       </div>
       <div class="row plain">
-        <label><input id="use_transition" type="checkbox"> 添加转场</label>
-        <span class="hint">片头与片尾之间叠化过渡</span>
+        <label>转场模式</label>
+        <select id="transition_mode">
+          <option value="不使用">不使用</option>
+          <option value="固定">固定转场</option>
+          <option value="随机">随机转场</option>
+        </select>
+      </div>
+      <div class="row plain">
+        <label>固定转场类型</label>
+        <select id="transition_type">
+          <option value="fade">淡入淡出</option>
+          <option value="dissolve">溶解</option>
+          <option value="slideleft">左滑</option>
+          <option value="slideright">右滑</option>
+          <option value="slideup">上滑</option>
+          <option value="slidedown">下滑</option>
+          <option value="circleopen">圆形打开</option>
+          <option value="circleclose">圆形关闭</option>
+          <option value="wipeleft">左擦除</option>
+          <option value="wiperight">右擦除</option>
+        </select>
+      </div>
+      <div class="row plain">
+        <label>转场时长</label>
+        <input id="transition_duration" type="number" min="0.1" max="2" step="0.1" value="0.5">
+        <span class="hint">秒</span>
+      </div>
+      <div class="row plain">
+        <label>随机转场类型</label>
+        <span class="hint">
+          <label><input type="checkbox" class="trans_pool" value="fade" checked>淡入淡出</label>
+          <label><input type="checkbox" class="trans_pool" value="dissolve" checked>溶解</label>
+          <label><input type="checkbox" class="trans_pool" value="slideleft" checked>左滑</label>
+          <label><input type="checkbox" class="trans_pool" value="slideright" checked>右滑</label>
+          <label><input type="checkbox" class="trans_pool" value="slideup" checked>上滑</label>
+          <label><input type="checkbox" class="trans_pool" value="slidedown" checked>下滑</label>
+          <label><input type="checkbox" class="trans_pool" value="circleopen" checked>圆形打开</label>
+          <label><input type="checkbox" class="trans_pool" value="circleclose" checked>圆形关闭</label>
+          <label><input type="checkbox" class="trans_pool" value="wipeleft" checked>左擦除</label>
+          <label><input type="checkbox" class="trans_pool" value="wiperight" checked>右擦除</label>
+        </span>
       </div>
       <div class="row plain">
         <label><input id="use_subtitle" type="checkbox"> 自动字幕</label>
@@ -440,6 +479,10 @@
       if (current) select.value = current;
     }
 
+    function collectTransitionPool() {
+      return Array.from(document.querySelectorAll('.trans_pool:checked')).map((el) => el.value);
+    }
+
     function collectConfig() {
       return {
         head_folder: $('head_folder').value.trim(),
@@ -457,7 +500,11 @@
         duration_mode: $('duration_mode').value,
         use_watermark: $('use_watermark').checked,
         watermark_path: $('watermark_path').value.trim(),
-        use_transition: $('use_transition').checked,
+        use_transition: $('transition_mode').value !== '不使用',
+        transition_mode: $('transition_mode').value,
+        transition_type: $('transition_type').value,
+        transition_duration: $('transition_duration').value,
+        transition_types: collectTransitionPool(),
         use_subtitle: $('use_subtitle').checked,
         bgm_mode: $('bgm_mode').value,
         bgm_path: $('bgm_path').value.trim(),
@@ -485,7 +532,11 @@
       $('duration_mode').value = cfg.duration_mode || '不限制';
       $('use_watermark').checked = !!cfg.use_watermark;
       $('watermark_path').value = cfg.watermark_path || '';
-      $('use_transition').checked = !!cfg.use_transition;
+      $('transition_mode').value = cfg.transition_mode || '不使用';
+      $('transition_type').value = cfg.transition_type || 'fade';
+      $('transition_duration').value = cfg.transition_duration || 0.5;
+      const pool = cfg.transition_types || [];
+      document.querySelectorAll('.trans_pool').forEach((el) => { el.checked = !pool.length || pool.includes(el.value); });
       $('use_subtitle').checked = !!cfg.use_subtitle;
       $('bgm_mode').value = cfg.bgm_mode || '不使用';
       $('bgm_path').value = cfg.bgm_path || '';
@@ -547,7 +598,11 @@
         duration_mode: $('duration_mode').value,
         use_watermark: $('use_watermark').checked,
         watermark_path: $('watermark_path').value.trim(),
-        use_transition: $('use_transition').checked,
+        use_transition: $('transition_mode').value !== '不使用',
+        transition_mode: $('transition_mode').value,
+        transition_type: $('transition_type').value,
+        transition_duration: $('transition_duration').value,
+        transition_types: collectTransitionPool(),
         use_subtitle: $('use_subtitle').checked,
         bgm_mode: $('bgm_mode').value,
         bgm_path: $('bgm_path').value.trim(),

@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 from imageio_ffmpeg import get_ffmpeg_exe
 
-from video_engine import JobConfig, build_combinations, probe_media, process_batch, render_output_name, scan_videos
+from video_engine import JobConfig, build_combinations, pick_transition, probe_media, process_batch, render_output_name, scan_videos
 
 
 FFMPEG = get_ffmpeg_exe()
@@ -93,6 +93,12 @@ class CorePipelineTests(unittest.TestCase):
         second = build_combinations(heads, tails, None, None, 6, seed=7)
         self.assertEqual(first, second)
         self.assertEqual(len(set(first)), 6)
+
+    def test_transition_selection(self) -> None:
+        cfg = JobConfig(head_folder="h", tail_folder="t", transition_mode="固定", transition_type="dissolve")
+        self.assertEqual(pick_transition(cfg, 1), "dissolve")
+        cfg2 = JobConfig(head_folder="h", tail_folder="t", transition_mode="随机", transition_types=["fade", "dissolve"])
+        self.assertIn(pick_transition(cfg2, 1), ["fade", "dissolve"])
 
     def test_render_output_name(self) -> None:
         name = render_output_name("{序号}_{开头}_{结尾}", 3, "head.mp4", "tail.mp4")

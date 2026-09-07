@@ -1,5 +1,6 @@
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -199,18 +200,24 @@ def concat_two(
     dst: str,
     head_duration: float,
     tail_duration: float,
-    transition: bool,
     cancel_event,
     pause_event,
+    transition_type: Optional[str] = None,
+    transition_duration: float = 0.5,
     log: Optional[Callable[[str], None]] = None,
 ) -> None:
     args = [_ffmpeg(), "-y", "-i", head, "-i", tail]
-    if transition and head_duration >= 1.0 and tail_duration >= 1.0:
-        transition_duration = min(0.5, head_duration - 0.2, tail_duration - 0.2)
-        offset = head_duration - transition_duration
+    can_transition = (
+        transition_type
+        and head_duration >= transition_duration + 0.2
+        and tail_duration >= transition_duration + 0.2
+    )
+    if can_transition:
+        duration = min(transition_duration, head_duration - 0.2, tail_duration - 0.2)
+        offset = head_duration - duration
         fc = (
-            f"[0:v][1:v]xfade=transition=fade:duration={transition_duration:.3f}:offset={offset:.3f}[v];"
-            f"[0:a][1:a]acrossfade=d={transition_duration:.3f}:c1=tri:c2=tri[a]"
+            f"[0:v][1:v]xfade=transition={transition_type}:duration={duration:.3f}:offset={offset:.3f}[v];"
+            f"[0:a][1:a]acrossfade=d={duration:.3f}:c1=tri:c2=tri[a]"
         )
     else:
         fc = "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]"
@@ -481,6 +488,10 @@ class JobConfig:
     use_watermark: bool = False
     watermark_path: str = ""
     use_transition: bool = False
+    transition_mode: str = "不使用"
+    transition_type: str = "fade"
+    transition_duration: float = 0.5
+    transition_types: list[str] = field(default_factory=list)
     bgm_mode: str = "不使用"
     bgm_path: str = ""
     bgm_volume: float = 0.2
@@ -515,6 +526,23 @@ def resolve_resolution(value: str) -> tuple[int, int]:
     if value == "1080x1920":
         return 1080, 1920
     return 1920, 1080
+
+
+DEFAULT_TRANSITIONS = ["fade", "dissolve", "slideleft", "slideright", "slideup", "slidedown", "circleopen", "circleclose", "wipeleft", "wiperight"]
+
+
+def pick_transition(config: "JobConfig", index: int) -> Optional[str]:
+    if config.transition_mode == "固定":
+        return config.transition_type or "fade"
+    if config.transition_mode == "随机":
+        pool = config.transition_types or DEFAULT_TRANSITIONS
+        if not pool:
+            return None
+        rng = random.Random(config.random_seed + index)
+        return rng.choice(pool)
+    if config.use_transition:
+        return config.transition_type or "fade"
+    return None
 
 
 def render_output_name(
@@ -626,6 +654,7 @@ def process_batch(
                     tail,
                     final_path,
                     middle,
+                    pick_transition(config, idx),
                     width,
                     height,
                     duration_limit,
@@ -676,11 +705,30 @@ def concat_three(
     second: str,
     third: str,
     dst: str,
+    durations: list[float],
     cancel_event,
     pause_event,
+    transition_type: Optional[str] = None,
+    transition_duration: float = 0.5,
     log: Optional[Callable[[str], None]] = None,
 ) -> None:
-    fc = "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]"
+    can_transition = (
+        transition_type
+        and len(durations) == 3
+        and all(d >= transition_duration + 0.2 for d in durations)
+    )
+    if can_transition:
+        d = min(transition_duration, *(x - 0.2 for x in durations))
+        o1 = durations[0] - d
+        o2 = durations[0] + durations[1] - d
+        fc = (
+            f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o1:.3f}[v1];"
+            f"[v1][2:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o2:.3f}[v];"
+            f"[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1];"
+            f"[a1][2:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a]"
+        )
+    else:
+        fc = "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]"
     args = [
         _ffmpeg(),
         "-y",
@@ -716,6 +764,7 @@ def _process_one_combo(
     tail: str,
     final_path: Path,
     middle: Optional[str],
+    transition_type: Optional[str],
     width: int,
     height: int,
     duration_limit: Optional[float],
@@ -777,8 +826,11 @@ def _process_one_combo(
                 middle_norm,
                 tail_norm,
                 concat_path,
+                [head_info["duration"], middle_info["duration"], tail_info["duration"]],
                 cancel_event,
                 pause_event,
+                transition_type,
+                config.transition_duration,
                 log,
             )
         else:
@@ -788,9 +840,10 @@ def _process_one_combo(
                 concat_path,
                 head_info["duration"],
                 tail_info["duration"],
-                config.use_transition,
                 cancel_event,
                 pause_event,
+                transition_type,
+                config.transition_duration,
                 log,
             )
 
@@ -929,6 +982,7 @@ def process_failed_items(
                     tail,
                     final_path,
                     middle,
+                    pick_transition(config, idx),
                     width,
                     height,
                     duration_limit,
