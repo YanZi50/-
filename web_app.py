@@ -76,10 +76,17 @@ class AppState:
 def run_folder_dialog(description: str) -> str:
     script = f"""
 Add-Type -AssemblyName System.Windows.Forms
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.WindowState = 'Minimized'
+$owner.Show()
 $d = New-Object System.Windows.Forms.FolderBrowserDialog
 $d.Description = '{description}'
 $d.ShowNewFolderButton = $true
-if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.SelectedPath }}
+$result = $d.ShowDialog($owner)
+$owner.Close()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.SelectedPath }}
 """
     try:
         proc = subprocess.run(
@@ -96,6 +103,7 @@ if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.SelectedP
 
 
 STATE = AppState()
+SELECT_LOCK = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -171,8 +179,14 @@ class Handler(BaseHTTPRequestHandler):
                 "middle": "选择中间素材文件夹",
                 "output": "选择输出路径",
             }.get(name, "选择文件夹")
-            path = run_folder_dialog(desc)
-            self._send_json({"path": path})
+            if not SELECT_LOCK.acquire(blocking=False):
+                self._send_json({"busy": True, "path": ""})
+                return
+            try:
+                path = run_folder_dialog(desc)
+                self._send_json({"path": path, "busy": False})
+            finally:
+                SELECT_LOCK.release()
             return
         if parsed.path == "/api/upload_path":
             query = parse_qs(parsed.query)

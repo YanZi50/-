@@ -312,6 +312,10 @@
 
     async function selectFolder(name) {
       const data = await api('/api/select_folder?name=' + encodeURIComponent(name));
+      if (data.busy) {
+        showMessage('文件夹选择窗口已打开，请先关闭');
+        return;
+      }
       if (!data.path) return;
       if (name === 'head') $('head_folder').value = data.path;
       if (name === 'tail') $('tail_folder').value = data.path;
