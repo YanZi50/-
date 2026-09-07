@@ -36,7 +36,7 @@
       box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
     }
     .card h2 { margin: 0 0 12px; font-size: 17px; }
-    .row { display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: center; margin: 9px 0; }
+    .row { display: grid; grid-template-columns: 120px 1fr auto auto; gap: 10px; align-items: center; margin: 9px 0; }
     .row.plain { grid-template-columns: 160px 1fr; }
     label { color: #334155; }
     input[type="text"], input[type="number"], select {
@@ -103,29 +103,29 @@
       <div class="row">
         <label>开头文件夹</label>
         <input id="head_folder" type="text" placeholder="例如：D:\素材\开头">
+        <span id="head_count" class="hint"></span>
         <div class="button-group">
           <button class="select-btn" onclick="selectFolder('head')">选择</button>
           <button class="secondary" onclick="uploadFolder('head')">上传</button>
         </div>
-        <span id="head_count" class="hint"></span>
       </div>
       <div class="row">
         <label>结尾文件夹</label>
         <input id="tail_folder" type="text" placeholder="例如：D:\素材\结尾">
+        <span id="tail_count" class="hint"></span>
         <div class="button-group">
           <button class="select-btn" onclick="selectFolder('tail')">选择</button>
           <button class="secondary" onclick="uploadFolder('tail')">上传</button>
         </div>
-        <span id="tail_count" class="hint"></span>
       </div>
       <div class="row">
         <label>中间文件夹</label>
         <input id="middle_folder" type="text" placeholder="可选：D:\素材\中间">
+        <span id="middle_count" class="hint"></span>
         <div class="button-group">
           <button class="select-btn" onclick="selectFolder('middle')">选择</button>
           <button class="secondary" onclick="uploadFolder('middle')">上传</button>
         </div>
-        <span id="middle_count" class="hint"></span>
       </div>
       <div class="row plain">
         <label>固定开头</label>
@@ -265,10 +265,10 @@
       <div class="row">
         <label>音乐文件夹</label>
         <input id="bgm_folder" type="text" placeholder="选择音乐文件夹">
+        <span id="bgm_count" class="hint"></span>
         <div class="button-group">
           <button class="select-btn" onclick="selectFolder('bgm')">选择</button>
         </div>
-        <span id="bgm_count" class="hint"></span>
       </div>
       <div class="row plain">
         <label>固定 BGM</label>
