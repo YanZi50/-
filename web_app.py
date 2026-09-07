@@ -14,7 +14,7 @@ from template_store import delete_template, list_templates, load_template, save_
 from platform_presets import apply_preset, get_presets
 import subtitle_plugin
 
-from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_videos
+from video_engine import BatchResult, JobConfig, MediaError, process_batch, process_failed_items, scan_audio, scan_videos
 
 
 HOST = "127.0.0.1"
@@ -159,14 +159,17 @@ class Handler(BaseHTTPRequestHandler):
             head = (query.get("head") or [""])[0]
             tail = (query.get("tail") or [""])[0]
             middle = (query.get("middle") or [""])[0]
+            bgm = (query.get("bgm") or [""])[0]
             head_files = scan_videos(head)
             tail_files = scan_videos(tail)
             middle_files = scan_videos(middle)
+            bgm_files = scan_audio(bgm)
             self._send_json(
                 {
                     "head": [{"name": Path(p).name, "path": p} for p in head_files],
                     "tail": [{"name": Path(p).name, "path": p} for p in tail_files],
                     "middle": [{"name": Path(p).name, "path": p} for p in middle_files],
+                    "bgm": [{"name": Path(p).name, "path": p} for p in bgm_files],
                 }
             )
             return
@@ -178,6 +181,7 @@ class Handler(BaseHTTPRequestHandler):
                 "tail": "选择结尾素材文件夹",
                 "middle": "选择中间素材文件夹",
                 "output": "选择输出路径",
+                "bgm": "选择音乐文件夹",
             }.get(name, "选择文件夹")
             if not SELECT_LOCK.acquire(blocking=False):
                 self._send_json({"busy": True, "path": ""})
@@ -581,8 +585,14 @@ class Handler(BaseHTTPRequestHandler):
 
         bgm_mode = str(payload.get("bgm_mode", "不使用"))
         bgm_path = str(payload.get("bgm_path", "")).strip()
+        bgm_folder = str(payload.get("bgm_folder", "")).strip()
+        fixed_bgm = str(payload.get("fixed_bgm") or "").strip() or None
         if bgm_mode == "本地导入" and not bgm_path:
             return "已选择本地导入 BGM，请填写音乐文件路径"
+        if bgm_mode in {"音乐文件夹固定", "音乐文件夹随机"} and not bgm_folder:
+            return "请选择音乐文件夹"
+        if bgm_mode == "音乐文件夹固定" and not fixed_bgm:
+            return "请选择固定 BGM"
 
         return JobConfig(
             head_folder=head_folder,
@@ -603,6 +613,8 @@ class Handler(BaseHTTPRequestHandler):
             bgm_mode=bgm_mode,
             bgm_path=bgm_path,
             bgm_volume=float(payload.get("bgm_volume", 0.2)),
+            bgm_folder=bgm_folder,
+            fixed_bgm=fixed_bgm,
             normalize_audio=bool(payload.get("normalize_audio", False)),
             bgm_fade=bool(payload.get("bgm_fade", False)),
             bgm_ducking=bool(payload.get("bgm_ducking", False)),

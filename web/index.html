@@ -259,9 +259,22 @@
         <label>BGM</label>
         <select id="bgm_mode">
           <option value="不使用">不使用</option>
+          <option value="音乐文件夹固定">音乐文件夹固定</option>
+          <option value="音乐文件夹随机">音乐文件夹随机</option>
           <option value="本地导入">本地导入</option>
           <option value="算法生成">算法生成</option>
         </select>
+      </div>
+      <div class="row">
+        <label>音乐文件夹</label>
+        <input id="bgm_folder" type="text" placeholder="选择音乐文件夹">
+        <div class="button-group">
+          <button class="select-btn" onclick="selectFolder('bgm')">选择</button>
+        </div>
+      </div>
+      <div class="row plain">
+        <label>固定 BGM</label>
+        <select id="fixed_bgm"><option value="">不固定</option></select>
       </div>
       <div class="row">
         <label>音乐文件</label>
@@ -368,6 +381,10 @@
       if (name === 'head') $('head_folder').value = data.path;
       if (name === 'tail') $('tail_folder').value = data.path;
       if (name === 'middle') $('middle_folder').value = data.path;
+      if (name === 'bgm') {
+        $('bgm_folder').value = data.path;
+        scanMaterials();
+      }
       if (name === 'output') {
         $('output_folder').value = data.path;
         showMessage('输出路径已选择');
@@ -451,16 +468,18 @@
       const head = $('head_folder').value.trim();
       const tail = $('tail_folder').value.trim();
       const middle = $('middle_folder').value.trim();
+      const bgm = $('bgm_folder').value.trim();
       if (!head || !tail) {
         $('scan_hint').textContent = '请先填写开头文件夹和结尾文件夹';
         return;
       }
       try {
-        const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail) + '&middle=' + encodeURIComponent(middle));
+        const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail) + '&middle=' + encodeURIComponent(middle) + '&bgm=' + encodeURIComponent(bgm));
         fillSelect('fixed_head', data.head || []);
         fillSelect('fixed_tail', data.tail || []);
         fillSelect('fixed_middle', data.middle || []);
-        $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个，中间 ${data.middle.length} 个`;
+      fillSelect('fixed_bgm', data.bgm || []);
+        $('scan_hint').textContent = `开头 ${data.head.length} 个，结尾 ${data.tail.length} 个，中间 ${data.middle.length} 个，音乐 ${data.bgm.length} 个`;
       } catch (e) {
         $('scan_hint').textContent = '扫描失败：' + e.message;
       }
@@ -507,6 +526,8 @@
         transition_types: collectTransitionPool(),
         use_subtitle: $('use_subtitle').checked,
         bgm_mode: $('bgm_mode').value,
+        bgm_folder: $('bgm_folder').value.trim(),
+        fixed_bgm: $('fixed_bgm').value,
         bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,
         normalize_audio: $('normalize_audio').checked,
@@ -539,6 +560,8 @@
       document.querySelectorAll('.trans_pool').forEach((el) => { el.checked = !pool.length || pool.includes(el.value); });
       $('use_subtitle').checked = !!cfg.use_subtitle;
       $('bgm_mode').value = cfg.bgm_mode || '不使用';
+      $('bgm_folder').value = cfg.bgm_folder || '';
+      $('fixed_bgm').value = cfg.fixed_bgm || '';
       $('bgm_path').value = cfg.bgm_path || '';
       $('bgm_volume').value = cfg.bgm_volume || 0.2;
       $('normalize_audio').checked = !!cfg.normalize_audio;
@@ -605,6 +628,8 @@
         transition_types: collectTransitionPool(),
         use_subtitle: $('use_subtitle').checked,
         bgm_mode: $('bgm_mode').value,
+        bgm_folder: $('bgm_folder').value.trim(),
+        fixed_bgm: $('fixed_bgm').value,
         bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,
         normalize_audio: $('normalize_audio').checked,

@@ -57,6 +57,17 @@ def scan_videos(folder: str) -> list[str]:
     return items
 
 
+def scan_audio(folder: str) -> list[str]:
+    path = Path(folder)
+    if not path.exists() or not path.is_dir():
+        return []
+    items = sorted(
+        [str(p) for p in path.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_EXTS],
+        key=lambda x: Path(x).name.lower(),
+    )
+    return items
+
+
 def parse_duration(value: str) -> float:
     match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", value)
     if not match:
@@ -494,6 +505,8 @@ class JobConfig:
     transition_types: list[str] = field(default_factory=list)
     bgm_mode: str = "不使用"
     bgm_path: str = ""
+    bgm_folder: str = ""
+    fixed_bgm: Optional[str] = None
     bgm_volume: float = 0.2
     normalize_audio: bool = False
     bgm_fade: bool = False
@@ -545,6 +558,19 @@ def pick_transition(config: "JobConfig", index: int) -> Optional[str]:
     return None
 
 
+def pick_bgm(config: "JobConfig", index: int, bgm_files: list[str]) -> Optional[str]:
+    if config.bgm_mode == "音乐文件夹固定":
+        return config.fixed_bgm
+    if config.bgm_mode == "音乐文件夹随机":
+        if not bgm_files:
+            return None
+        rng = random.Random(config.random_seed + index)
+        return rng.choice(bgm_files)
+    if config.bgm_mode == "本地导入":
+        return config.bgm_path
+    return None
+
+
 def render_output_name(
     template: str,
     index: int,
@@ -583,6 +609,7 @@ def process_batch(
     head_files = scan_videos(config.head_folder)
     tail_files = scan_videos(config.tail_folder)
     middle_files = scan_videos(config.middle_folder) if config.middle_folder else []
+    bgm_files = scan_audio(config.bgm_folder) if config.bgm_folder else []
     if not head_files:
         raise MediaError("开头文件夹中没有找到视频文件。")
     if not tail_files:
@@ -594,6 +621,8 @@ def process_batch(
         raise MediaError("固定结尾不在结尾文件夹中，请重新选择。")
     if config.fixed_middle and config.fixed_middle not in middle_files:
         raise MediaError("固定中间素材不在中间文件夹中，请重新选择。")
+    if config.bgm_mode == "音乐文件夹固定" and config.fixed_bgm and config.fixed_bgm not in bgm_files:
+        raise MediaError("固定 BGM 不在音乐文件夹中，请重新选择。")
 
     count = max(1, min(200, int(config.count)))
     if config.fixed_head and config.fixed_tail:
@@ -655,6 +684,7 @@ def process_batch(
                     final_path,
                     middle,
                     pick_transition(config, idx),
+                    pick_bgm(config, idx, bgm_files),
                     width,
                     height,
                     duration_limit,
@@ -765,6 +795,7 @@ def _process_one_combo(
     final_path: Path,
     middle: Optional[str],
     transition_type: Optional[str],
+    selected_bgm: Optional[str],
     width: int,
     height: int,
     duration_limit: Optional[float],
@@ -853,17 +884,19 @@ def _process_one_combo(
             trim_duration(concat_path, trimmed, duration_limit, cancel_event, pause_event, log)
             current = trimmed
 
-        if config.bgm_mode in {"本地导入", "算法生成"}:
-            bgm = config.bgm_path if config.bgm_mode == "本地导入" else str(tempdir / "bgm.wav")
+        if config.bgm_mode in {"本地导入", "算法生成", "音乐文件夹固定", "音乐文件夹随机"}:
             if config.bgm_mode == "算法生成":
+                bgm = str(tempdir / "bgm.wav")
                 log("正在生成背景音乐...")
                 generate_bgm_wav(bgm, max(32.0, total_duration))
-            mixed = str(tempdir / "with_bgm.mp4")
-            if config.bgm_mode == "本地导入":
+                bgm_duration = max(32.0, total_duration)
+            else:
+                bgm = selected_bgm or config.bgm_path
+                if not bgm:
+                    raise MediaError("没有可用的 BGM 文件")
                 bgm_info = probe_media(bgm)
                 bgm_duration = bgm_info["duration"]
-            else:
-                bgm_duration = max(32.0, total_duration)
+            mixed = str(tempdir / "with_bgm.mp4")
             mix_bgm(
                 current,
                 bgm,
@@ -954,6 +987,7 @@ def process_failed_items(
     output_dir.mkdir(parents=True, exist_ok=True)
     width, height = resolve_resolution(config.resolution)
     duration_limit = resolve_duration_mode(config.duration_mode)
+    bgm_files = scan_audio(config.bgm_folder) if config.bgm_folder else []
     logger = _make_task_logger(log)
     logger(f"开始重试失败项，共 {len(failed_items)} 条")
 
@@ -983,6 +1017,7 @@ def process_failed_items(
                     final_path,
                     middle,
                     pick_transition(config, idx),
+                    pick_bgm(config, idx, bgm_files),
                     width,
                     height,
                     duration_limit,

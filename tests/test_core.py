@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 from imageio_ffmpeg import get_ffmpeg_exe
 
-from video_engine import JobConfig, build_combinations, pick_transition, probe_media, process_batch, render_output_name, scan_videos
+from video_engine import JobConfig, build_combinations, pick_bgm, pick_transition, probe_media, process_batch, render_output_name, scan_audio, scan_videos
 
 
 FFMPEG = get_ffmpeg_exe()
@@ -93,6 +93,16 @@ class CorePipelineTests(unittest.TestCase):
         second = build_combinations(heads, tails, None, None, 6, seed=7)
         self.assertEqual(first, second)
         self.assertEqual(len(set(first)), 6)
+
+    def test_audio_folder_scan_and_pick(self) -> None:
+        audio_dir = self.temp / "audio"
+        audio_dir.mkdir()
+        (audio_dir / "a.mp3").write_bytes(b"a")
+        (audio_dir / "b.wav").write_bytes(b"b")
+        files = scan_audio(str(audio_dir))
+        self.assertEqual(len(files), 2)
+        cfg = JobConfig(head_folder="h", tail_folder="t", bgm_mode="音乐文件夹随机")
+        self.assertIn(pick_bgm(cfg, 1, files), files)
 
     def test_transition_selection(self) -> None:
         cfg = JobConfig(head_folder="h", tail_folder="t", transition_mode="固定", transition_type="dissolve")
