@@ -259,10 +259,8 @@
         <label>BGM</label>
         <select id="bgm_mode">
           <option value="不使用">不使用</option>
-          <option value="音乐文件夹固定">音乐文件夹固定</option>
-          <option value="音乐文件夹随机">音乐文件夹随机</option>
-          <option value="本地导入">本地导入</option>
-          <option value="算法生成">算法生成</option>
+          <option value="音乐文件夹随机">随机 BGM</option>
+          <option value="音乐文件夹固定">固定 BGM</option>
         </select>
       </div>
       <div class="row">
@@ -274,14 +272,7 @@
       </div>
       <div class="row plain">
         <label>固定 BGM</label>
-        <select id="fixed_bgm"><option value="">不固定</option></select>
-      </div>
-      <div class="row">
-        <label>音乐文件</label>
-        <input id="bgm_path" type="text" placeholder="本地导入时填写">
-        <div class="button-group">
-          <button class="secondary" onclick="uploadSingle('bgm')">上传</button>
-        </div>
+        <select id="fixed_bgm"><option value="">请选择固定 BGM</option></select>
       </div>
       <div class="row plain">
         <label>BGM 音量</label>
@@ -340,7 +331,6 @@
   <input id="tail_upload" type="file" webkitdirectory hidden>
   <input id="middle_upload" type="file" webkitdirectory hidden>
   <input id="watermark_upload" type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="watermarkSelected(this)">
-  <input id="bgm_upload" type="file" accept="audio/*" hidden>
 
   <script>
     const $ = (id) => document.getElementById(id);
@@ -442,10 +432,6 @@
             $('watermark_path').value = full;
             showMessage('水印已选择：' + file.name);
           }
-          if (kind === 'bgm') {
-            $('bgm_path').value = full;
-            showMessage('音乐已选择：' + file.name);
-          }
         }
       };
       input.click();
@@ -528,7 +514,6 @@
         bgm_mode: $('bgm_mode').value,
         bgm_folder: $('bgm_folder').value.trim(),
         fixed_bgm: $('fixed_bgm').value,
-        bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,
         normalize_audio: $('normalize_audio').checked,
         bgm_fade: $('bgm_fade').checked,
@@ -562,7 +547,6 @@
       $('bgm_mode').value = cfg.bgm_mode || '不使用';
       $('bgm_folder').value = cfg.bgm_folder || '';
       $('fixed_bgm').value = cfg.fixed_bgm || '';
-      $('bgm_path').value = cfg.bgm_path || '';
       $('bgm_volume').value = cfg.bgm_volume || 0.2;
       $('normalize_audio').checked = !!cfg.normalize_audio;
       $('bgm_fade').checked = !!cfg.bgm_fade;
@@ -630,7 +614,6 @@
         bgm_mode: $('bgm_mode').value,
         bgm_folder: $('bgm_folder').value.trim(),
         fixed_bgm: $('fixed_bgm').value,
-        bgm_path: $('bgm_path').value.trim(),
         bgm_volume: $('bgm_volume').value,
         normalize_audio: $('normalize_audio').checked,
         bgm_fade: $('bgm_fade').checked,
