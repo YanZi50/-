@@ -303,7 +303,7 @@ async function scan(kind) {
     // 只处理新增文件，避免重复请求详情
     const existing = new Map(state.materials[kind].map((m) => [m.path, m]));
     const newFiles = files.filter((f) => !existing.has(f.path));
-    const enriched = await enrichMaterials(newFiles);
+    const enriched = await enrichMaterials(newFiles, kind);
     state.materials[kind] = files.map((f) => existing.get(f.path) || enriched.find((e) => e.path === f.path) || {
       path: f.path, name: f.name, ok: true, thumbUrl: thumbUrl(f.path),
     });
@@ -373,7 +373,7 @@ function thumbUrl(path) {
   return '/api/thumb?path=' + encodeURIComponent(path);
 }
 
-async function enrichMaterials(files, concurrency = 6) {
+async function enrichMaterials(files, kind = '', concurrency = 6) {
   const out = new Array(files.length);
   let next = 0;
   async function worker() {
@@ -382,8 +382,9 @@ async function enrichMaterials(files, concurrency = 6) {
       if (i >= files.length) return;
       const f = files[i];
       try {
-        const d = await api('/api/material_detail?path=' + encodeURIComponent(f.path));
-        const ok = d.ok && d.has_video;
+        const d = await api('/api/material_detail?path=' + encodeURIComponent(f.path) + '&kind=' + encodeURIComponent(kind));
+        // BGM 为纯音频（无视频流），有音频流即正常；视频素材必须有视频流
+        const ok = kind === 'bgm' ? (d.ok && (d.has_video || d.has_audio)) : (d.ok && d.has_video);
         out[i] = {
           path: f.path, name: f.name, ok,
           thumbUrl: thumbUrl(f.path),

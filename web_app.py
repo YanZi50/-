@@ -416,10 +416,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/material_detail":
             path = (query.get("path") or [""])[0]
+            kind = (query.get("kind") or [""])[0]
             if not path or not os.path.isfile(path):
                 self._send_json({"ok": False, "error": "文件不存在"}, 404)
                 return
-            info = probe_media(path)
+            # BGM 是纯音频文件（无视频流），按音频标准判定健康
+            info = probe_media(path, require_video=(kind != "bgm"))
             self._send_json({"ok": True, "path": path, **info})
             return
         if route == "/api/thumb":
