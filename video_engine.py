@@ -1,3 +1,4 @@
+import hashlib
 import math
 import os
 import random
@@ -6,11 +7,13 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Optional
 
 import numpy as np
 from imageio_ffmpeg import get_ffmpeg_exe
@@ -44,6 +47,38 @@ def _ffmpeg() -> str:
         if candidate.exists():
             return str(candidate)
     raise MediaError("找不到 FFmpeg。")
+
+
+def _app_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def cache_dir() -> Path:
+    path = _app_root() / "cache"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _file_fingerprint(path: str, extra: str = "") -> str:
+    st = os.stat(path)
+    payload = f"{os.path.abspath(path)}|{st.st_size}|{st.st_mtime_ns}|{extra}"
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _norm_cache_path(src: str, width: int, height: int, has_audio: bool, normalize_audio: bool) -> Path:
+    key = _file_fingerprint(src, f"norm|{width}x{height}|{has_audio}|{normalize_audio}")
+    folder = cache_dir() / "norm"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{key}.mp4"
+
+
+def _thumb_cache_path(src: str, max_width: int) -> Path:
+    key = _file_fingerprint(src, f"thumb|{max_width}")
+    folder = cache_dir() / "thumbs"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{key}.jpg"
 
 
 def scan_videos(folder: str) -> list[str]:
@@ -95,10 +130,19 @@ def probe_media(path: str) -> dict:
     )
     text = proc.stderr or ""
     duration = parse_duration(text)
+    has_audio = bool(re.search(r"Stream #\d+:\d+[^\n]*Audio:", text))
+    has_video = bool(re.search(r"Stream #\d+:\d+[^\n]*Video:", text))
+    width = height = 0
+    vm = re.search(r"Video:\s*\S+.*?(\d{2,5})x(\d{2,5})", text)
+    if vm:
+        width, height = int(vm.group(1)), int(vm.group(2))
     return {
         "duration": duration or 1.0,
-        "has_audio": bool(re.search(r"Stream #\d+:\d+[^\n]*Audio:", text)),
-        "has_video": bool(re.search(r"Stream #\d+:\d+[^\n]*Video:", text)),
+        "has_audio": has_audio,
+        "has_video": has_video,
+        "width": width,
+        "height": height,
+        "ok": bool(has_video and duration > 0.05),
     }
 
 
@@ -161,6 +205,16 @@ def normalize_clip(
     log: Optional[Callable[[str], None]] = None,
     normalize_audio: bool = False,
 ) -> None:
+    cached = _norm_cache_path(src, width, height, has_audio, normalize_audio)
+    if cached.exists() and cached.stat().st_size > 0:
+        shutil.copy2(cached, dst)
+        if log:
+            log(f"命中归一化缓存：{Path(src).name}")
+        return
+
+    tmp_cache = cached.with_name(
+        f"{cached.stem}.{os.getpid()}.{threading.get_ident()}.mp4"
+    )
     vf = _filter_scale_pad(width, height)
     args = [_ffmpeg(), "-y", "-i", src]
     if not has_audio:
@@ -199,10 +253,14 @@ def normalize_clip(
         "48000",
         "-ac",
         "2",
+        "-video_track_timescale",
+        "15360",
         "-shortest",
-        dst,
+        tmp_cache,
     ]
     run_ffmpeg(args, cancel_event, pause_event, log)
+    os.replace(tmp_cache, cached)
+    shutil.copy2(cached, dst)
 
 
 def concat_two(
@@ -252,6 +310,92 @@ def concat_two(
         dst,
     ]
     run_ffmpeg(args, cancel_event, pause_event, log)
+
+
+def concat_three(
+    first: str,
+    second: str,
+    third: str,
+    dst: str,
+    durations: list[float],
+    cancel_event,
+    pause_event,
+    transition_type: Optional[str] = None,
+    transition_duration: float = 0.5,
+    log: Optional[Callable[[str], None]] = None,
+) -> None:
+    can_transition = (
+        transition_type
+        and len(durations) == 3
+        and all(d >= transition_duration + 0.2 for d in durations)
+    )
+    if can_transition:
+        d = min(transition_duration, *(x - 0.2 for x in durations))
+        o1 = durations[0] - d
+        o2 = durations[0] + durations[1] - d
+        fc = (
+            f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o1:.3f}[v1];"
+            f"[v1][2:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o2:.3f}[v];"
+            f"[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1];"
+            f"[a1][2:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a]"
+        )
+    else:
+        fc = "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]"
+    args = [
+        _ffmpeg(),
+        "-y",
+        "-i",
+        first,
+        "-i",
+        second,
+        "-i",
+        third,
+        "-filter_complex",
+        fc,
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        dst,
+    ]
+    run_ffmpeg(args, cancel_event, pause_event, log)
+
+
+def concat_copy(clips: list[str], dst: str, cancel_event, pause_event, log: Optional[Callable[[str], None]] = None) -> None:
+    """无转场且素材已归一化时，用 concat demuxer 流复制拼接，避免重编码。"""
+    tempdir = Path(tempfile.mkdtemp(prefix="sppj_concat_"))
+    try:
+        list_file = tempdir / "list.txt"
+        lines = [f"file '{p.replace(chr(39), chr(39) + chr(92) + chr(39))}'" for p in clips]
+        list_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        args = [
+            _ffmpeg(),
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_file),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            dst,
+        ]
+        run_ffmpeg(args, cancel_event, pause_event, log)
+    finally:
+        shutil.rmtree(tempdir, ignore_errors=True)
 
 
 def trim_duration(
@@ -405,11 +549,31 @@ def apply_watermark(
     cancel_event,
     pause_event,
     log: Optional[Callable[[str], None]] = None,
+    mode: str = "铺满全屏",
+    position: str = "右下角",
+    scale: float = 0.15,
+    opacity: float = 0.6,
 ) -> None:
-    fc = (
-        f"[1:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}[wm];"
-        "[0:v][wm]overlay=0:0:format=auto:shortest=1[v]"
-    )
+    if mode == "角落水印":
+        target_w = max(40, int(width * max(0.05, min(0.6, scale))))
+        opacity = max(0.05, min(1.0, opacity))
+        margin = max(12, int(width * 0.02))
+        pos_map = {
+            "右下角": f"main_w-overlay_w-{margin}:main_h-overlay_h-{margin}",
+            "右上角": f"main_w-overlay_w-{margin}:{margin}",
+            "左下角": f"{margin}:main_h-overlay_h-{margin}",
+            "左上角": f"{margin}:{margin}",
+        }
+        pos = pos_map.get(position, pos_map["右下角"])
+        fc = (
+            f"[1:v]scale={target_w}:-2,format=rgba,colorchannelmixer=aa={opacity:.2f}[wm];"
+            f"[0:v][wm]overlay={pos}:format=auto:shortest=1[v]"
+        )
+    else:
+        fc = (
+            f"[1:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}[wm];"
+            "[0:v][wm]overlay=0:0:format=auto:shortest=1[v]"
+        )
     args = [
         _ffmpeg(),
         "-y",
@@ -438,6 +602,52 @@ def apply_watermark(
     run_ffmpeg(args, cancel_event, pause_event, log)
 
 
+def get_thumbnail(path: str, max_width: int = 320) -> Optional[str]:
+    """抽取素材缩略图（带缓存），失败返回 None。"""
+    if not Path(path).exists():
+        return None
+    cached = _thumb_cache_path(path, max_width)
+    if cached.exists() and cached.stat().st_size > 0:
+        return str(cached)
+    info = probe_media(path)
+    if not info.get("ok"):
+        return None
+    seek = min(0.5, info["duration"] / 3.0)
+    tmp = cached.with_name(f"{cached.stem}.{os.getpid()}.{threading.get_ident()}.tmp.jpg")
+    args = [
+        _ffmpeg(),
+        "-y",
+        "-ss",
+        f"{seek:.3f}",
+        "-i",
+        path,
+        "-frames:v",
+        "1",
+        "-vf",
+        f"scale='min({max_width},iw)':-2",
+        "-q:v",
+        "4",
+        tmp,
+    ]
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        proc = subprocess.run(
+            args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+            timeout=30,
+        )
+        if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+            tmp.unlink(missing_ok=True)
+            return None
+        os.replace(tmp, cached)
+        return str(cached)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        return None
+
+
 def build_combinations(
     head_files: list[str],
     tail_files: list[str],
@@ -447,8 +657,6 @@ def build_combinations(
     seed: int = 20260905,
     dedupe_enabled: bool = True,
 ) -> list[tuple[str, str]]:
-    import random
-
     rng = random.Random(seed)
     if fixed_head and fixed_tail:
         return [(fixed_head, fixed_tail)]
@@ -517,6 +725,11 @@ class JobConfig:
     middle_folder: str = ""
     fixed_middle: Optional[str] = None
     use_subtitle: bool = False
+    watermark_mode: str = "铺满全屏"
+    watermark_position: str = "右下角"
+    watermark_scale: float = 0.15
+    watermark_opacity: float = 0.6
+    workers: int = 2
 
 
 @dataclass
@@ -596,6 +809,130 @@ def render_output_name(
     return clean(result) + ".mp4"
 
 
+def _unique_output_name(output_dir: Path, idx: int) -> str:
+    stamp = time.strftime("%H%M%S")
+    name = f"output_{idx:03d}_{stamp}.mp4"
+    if not (output_dir / name).exists():
+        return name
+    n = 1
+    while True:
+        candidate = f"output_{idx:03d}_{stamp}_{n}.mp4"
+        if not (output_dir / candidate).exists():
+            return candidate
+        n += 1
+
+
+def precheck_materials(config: "JobConfig") -> dict:
+    """批量预检素材，返回每类素材的健康状态，坏文件提前标出。"""
+    groups: dict[str, list[str]] = {
+        "head": scan_videos(config.head_folder),
+        "tail": scan_videos(config.tail_folder),
+        "middle": scan_videos(config.middle_folder) if config.middle_folder else [],
+        "bgm": scan_audio(config.bgm_folder) if config.bgm_folder else [],
+    }
+    out: dict[str, list[dict]] = {}
+    for kind, files in groups.items():
+        items = []
+        for path in files:
+            try:
+                info = probe_media(path)
+                items.append(
+                    {
+                        "path": path,
+                        "name": Path(path).name,
+                        "ok": info.get("ok", True),
+                        "duration": round(info.get("duration", 0.0), 2),
+                        "has_audio": info.get("has_audio", False),
+                        "width": info.get("width", 0),
+                        "height": info.get("height", 0),
+                        "error": "" if info.get("ok", True) else "无法读取视频流",
+                    }
+                )
+            except Exception as exc:
+                items.append(
+                    {
+                        "path": path,
+                        "name": Path(path).name,
+                        "ok": False,
+                        "duration": 0.0,
+                        "has_audio": False,
+                        "width": 0,
+                        "height": 0,
+                        "error": str(exc),
+                    }
+                )
+        out[kind] = items
+    return out
+
+
+def _process_one_item(
+    idx: int,
+    head: str,
+    tail: str,
+    middle: Optional[str],
+    final_path: Path,
+    config: "JobConfig",
+    width: int,
+    height: int,
+    duration_limit: Optional[float],
+    bgm_files: list[str],
+    cancel_event,
+    pause_event,
+    log: Callable[[str], None],
+    retry_count: int,
+    path_locks: dict,
+) -> dict:
+    """处理单个组合，返回结果字典。由 worker 线程调用。"""
+    if cancel_event.is_set():
+        return {"index": idx, "state": "cancelled"}
+    while pause_event.is_set() and not cancel_event.is_set():
+        time.sleep(0.2)
+    if cancel_event.is_set():
+        return {"index": idx, "state": "cancelled"}
+
+    if final_path.exists() and final_path.stat().st_size > 0:
+        log(f"[{idx}] 已存在，跳过：{final_path}")
+        return {"index": idx, "state": "skipped", "output": str(final_path)}
+
+    lock = path_locks.setdefault(str(final_path), threading.Lock())
+    with lock:
+        if final_path.exists() and final_path.stat().st_size > 0:
+            log(f"[{idx}] 已存在，跳过：{final_path}")
+            return {"index": idx, "state": "skipped", "output": str(final_path)}
+        middle_desc = f" + {Path(middle).name}" if middle else ""
+        log(f"[{idx}] 开始生成：{Path(head).name}{middle_desc} + {Path(tail).name}")
+        last_error = None
+        for attempt in range(retry_count + 1):
+            if cancel_event.is_set():
+                return {"index": idx, "state": "cancelled"}
+            try:
+                _process_one_combo(
+                    head,
+                    tail,
+                    final_path,
+                    middle,
+                    pick_transition(config, idx),
+                    pick_bgm(config, idx, bgm_files),
+                    width,
+                    height,
+                    duration_limit,
+                    config,
+                    cancel_event,
+                    pause_event,
+                    log,
+                )
+                log(f"[{idx}] 完成：{final_path}")
+                return {"index": idx, "state": "success", "head": head, "tail": tail, "middle": middle, "output": str(final_path)}
+            except CancelledError:
+                return {"index": idx, "state": "cancelled"}
+            except Exception as exc:
+                last_error = exc
+                log(f"[{idx}] 第 {attempt + 1} 次失败：{exc}")
+                if attempt < retry_count:
+                    time.sleep(1)
+        return {"index": idx, "state": "failed", "head": head, "tail": tail, "middle": middle, "error": str(last_error)}
+
+
 def process_batch(
     config: JobConfig,
     cancel_event,
@@ -646,81 +983,73 @@ def process_batch(
 
     logger = _make_task_logger(log)
     task_id = time.strftime("%Y%m%d_%H%M%S")
-    logger(f"任务 {task_id} 开始，共 {len(combos)} 条")
+    logger(f"任务 {task_id} 开始，共 {len(combos)} 条，并发 {config.workers}")
 
-    for idx, (head, tail) in enumerate(combos, 1):
+    workers = max(1, min(8, int(config.workers or 1)))
+    path_locks: dict = {}
+    done_count = 0
+    done_lock = threading.Lock()
+
+    def on_done() -> None:
+        nonlocal done_count
+        with done_lock:
+            done_count += 1
+            current = done_count
         if progress:
-            progress(idx, len(combos))
-        if cancel_event.is_set():
-            result.cancelled = True
-            break
-        while pause_event.is_set() and not cancel_event.is_set():
-            time.sleep(0.2)
-        if cancel_event.is_set():
-            result.cancelled = True
-            break
+            progress(current, len(combos))
 
-        middle = None
-        if middle_files:
-            middle = config.fixed_middle or middle_files[(idx - 1) % len(middle_files)]
-        final_name = render_output_name(config.output_name_template, idx, head, tail, middle)
-        final_path = output_dir / final_name
-        if skip_existing and final_path.exists() and final_path.stat().st_size > 0:
-            result.skipped += 1
-            logger(f"[{idx}/{len(combos)}] 已存在，跳过：{final_path}")
-            continue
-
-        middle_desc = f" + {Path(middle).name}" if middle else ""
-        logger(f"[{idx}/{len(combos)}] 开始生成：{Path(head).name}{middle_desc} + {Path(tail).name}")
-        last_error = None
-        for attempt in range(retry_count + 1):
-            if cancel_event.is_set():
-                result.cancelled = True
-                break
-            try:
-                _process_one_combo(
-                    head,
-                    tail,
-                    final_path,
-                    middle,
-                    pick_transition(config, idx),
-                    pick_bgm(config, idx, bgm_files),
-                    width,
-                    height,
-                    duration_limit,
-                    config,
-                    cancel_event,
-                    pause_event,
-                    logger,
-                )
-                result.success += 1
-                result.success_items.append(
-                    {"index": idx, "head": head, "tail": tail, "middle": middle, "output": str(final_path)}
-                )
-                last_error = None
-                logger(f"[{idx}/{len(combos)}] 完成：{final_path}")
-                break
-            except CancelledError:
-                raise
-            except Exception as exc:
-                last_error = exc
-                logger(f"[{idx}/{len(combos)}] 第 {attempt + 1} 次失败：{exc}")
-                if attempt < retry_count:
-                    time.sleep(1)
-        else:
-            result.failed += 1
-            message = f"[{idx}/{len(combos)}] 最终失败：{last_error}"
-            result.errors.append(message)
-            result.failed_items.append(
-                {
-                    "index": idx,
-                    "head": head,
-                    "tail": tail,
-                    "middle": middle,
-                    "error": str(last_error),
-                }
+    if workers <= 1:
+        for idx, (head, tail) in enumerate(combos, 1):
+            middle = None
+            if middle_files:
+                middle = config.fixed_middle or middle_files[(idx - 1) % len(middle_files)]
+            final_name = render_output_name(config.output_name_template, idx, head, tail, middle)
+            final_path = output_dir / final_name
+            if skip_existing and final_path.exists() and final_path.stat().st_size > 0:
+                result.skipped += 1
+                on_done()
+                continue
+            item = _process_one_item(
+                idx, head, tail, middle, final_path, config, width, height,
+                duration_limit, bgm_files, cancel_event, pause_event, logger,
+                retry_count, path_locks,
             )
-            logger(message)
+            _collect_item(result, item)
+            on_done()
+    else:
+        tasks = []
+        for idx, (head, tail) in enumerate(combos, 1):
+            middle = None
+            if middle_files:
+                middle = config.fixed_middle or middle_files[(idx - 1) % len(middle_files)]
+            final_name = render_output_name(config.output_name_template, idx, head, tail, middle)
+            final_path = output_dir / final_name
+            tasks.append((idx, head, tail, middle, final_path))
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {}
+            for idx, head, tail, middle, final_path in tasks:
+                if cancel_event.is_set():
+                    result.cancelled = True
+                    break
+                if skip_existing and final_path.exists() and final_path.stat().st_size > 0:
+                    result.skipped += 1
+                    on_done()
+                    continue
+                fut = executor.submit(
+                    _process_one_item,
+                    idx, head, tail, middle, final_path, config, width, height,
+                    duration_limit, bgm_files, cancel_event, pause_event, logger,
+                    retry_count, path_locks,
+                )
+                futures[fut] = idx
+            for fut in as_completed(futures):
+                try:
+                    item = fut.result()
+                except Exception as exc:
+                    item = {"index": futures[fut], "state": "failed", "error": str(exc)}
+                _collect_item(result, item)
+                on_done()
 
     if progress:
         progress(len(combos), len(combos))
@@ -730,63 +1059,36 @@ def process_batch(
     return result
 
 
-def concat_three(
-    first: str,
-    second: str,
-    third: str,
-    dst: str,
-    durations: list[float],
-    cancel_event,
-    pause_event,
-    transition_type: Optional[str] = None,
-    transition_duration: float = 0.5,
-    log: Optional[Callable[[str], None]] = None,
-) -> None:
-    can_transition = (
-        transition_type
-        and len(durations) == 3
-        and all(d >= transition_duration + 0.2 for d in durations)
-    )
-    if can_transition:
-        d = min(transition_duration, *(x - 0.2 for x in durations))
-        o1 = durations[0] - d
-        o2 = durations[0] + durations[1] - d
-        fc = (
-            f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o1:.3f}[v1];"
-            f"[v1][2:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o2:.3f}[v];"
-            f"[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1];"
-            f"[a1][2:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a]"
+def _collect_item(result: BatchResult, item: dict) -> None:
+    state = item.get("state")
+    if state == "success":
+        result.success += 1
+        result.success_items.append(
+            {
+                "index": item["index"],
+                "head": item.get("head", ""),
+                "tail": item.get("tail", ""),
+                "middle": item.get("middle"),
+                "output": item.get("output", ""),
+            }
         )
-    else:
-        fc = "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]"
-    args = [
-        _ffmpeg(),
-        "-y",
-        "-i",
-        first,
-        "-i",
-        second,
-        "-i",
-        third,
-        "-filter_complex",
-        fc,
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        dst,
-    ]
-    run_ffmpeg(args, cancel_event, pause_event, log)
+    elif state == "failed":
+        result.failed += 1
+        message = f"[{item['index']}] 最终失败：{item.get('error', '')}"
+        result.errors.append(message)
+        result.failed_items.append(
+            {
+                "index": item["index"],
+                "head": item.get("head", ""),
+                "tail": item.get("tail", ""),
+                "middle": item.get("middle"),
+                "error": item.get("error", ""),
+            }
+        )
+    elif state == "skipped":
+        result.skipped += 1
+    elif state == "cancelled":
+        result.cancelled = True
 
 
 def _process_one_combo(
@@ -816,67 +1118,33 @@ def _process_one_combo(
         current = concat_path
 
         normalize_clip(
-            head,
-            head_norm,
-            width,
-            height,
-            head_info["duration"],
-            head_info["has_audio"],
-            cancel_event,
-            pause_event,
-            log,
-            config.normalize_audio,
+            head, head_norm, width, height, head_info["duration"], head_info["has_audio"],
+            cancel_event, pause_event, log, config.normalize_audio,
         )
         normalize_clip(
-            tail,
-            tail_norm,
-            width,
-            height,
-            tail_info["duration"],
-            tail_info["has_audio"],
-            cancel_event,
-            pause_event,
-            log,
-            config.normalize_audio,
+            tail, tail_norm, width, height, tail_info["duration"], tail_info["has_audio"],
+            cancel_event, pause_event, log, config.normalize_audio,
         )
         if middle:
             normalize_clip(
-                middle,
-                middle_norm,
-                width,
-                height,
-                middle_info["duration"],
-                middle_info["has_audio"],
-                cancel_event,
-                pause_event,
-                log,
-                config.normalize_audio,
+                middle, middle_norm, width, height, middle_info["duration"], middle_info["has_audio"],
+                cancel_event, pause_event, log, config.normalize_audio,
             )
             concat_three(
-                head_norm,
-                middle_norm,
-                tail_norm,
-                concat_path,
+                head_norm, middle_norm, tail_norm, concat_path,
                 [head_info["duration"], middle_info["duration"], tail_info["duration"]],
-                cancel_event,
-                pause_event,
-                transition_type,
-                config.transition_duration,
-                log,
+                cancel_event, pause_event, transition_type, config.transition_duration, log,
             )
         else:
-            concat_two(
-                head_norm,
-                tail_norm,
-                concat_path,
-                head_info["duration"],
-                tail_info["duration"],
-                cancel_event,
-                pause_event,
-                transition_type,
-                config.transition_duration,
-                log,
-            )
+            if transition_type:
+                concat_two(
+                    head_norm, tail_norm, concat_path,
+                    head_info["duration"], tail_info["duration"],
+                    cancel_event, pause_event, transition_type, config.transition_duration, log,
+                )
+            else:
+                # 无转场且素材已统一归一化，使用流复制快路径
+                concat_copy([head_norm, tail_norm], concat_path, cancel_event, pause_event, log)
 
         total_duration = head_info["duration"] + (middle_info["duration"] if middle else 0.0) + tail_info["duration"]
         if duration_limit and total_duration > duration_limit:
@@ -898,16 +1166,9 @@ def _process_one_combo(
                 bgm_duration = bgm_info["duration"]
             mixed = str(tempdir / "with_bgm.mp4")
             mix_bgm(
-                current,
-                bgm,
-                mixed,
-                float(config.bgm_volume),
-                cancel_event,
-                pause_event,
-                log,
-                fade=config.bgm_fade,
-                ducking=config.bgm_ducking,
-                bgm_duration=bgm_duration,
+                current, bgm, mixed, float(config.bgm_volume),
+                cancel_event, pause_event, log,
+                fade=config.bgm_fade, ducking=config.bgm_ducking, bgm_duration=bgm_duration,
             )
             current = mixed
 
@@ -917,12 +1178,7 @@ def _process_one_combo(
                     "自动字幕需要 faster-whisper。请运行：pip install faster-whisper"
                 )
             srt_path = str(tempdir / "subtitle.srt")
-            subtitle_plugin.generate_subtitles(
-                head,
-                tail,
-                head_info["duration"],
-                srt_path,
-            )
+            subtitle_plugin.generate_subtitles(head, tail, head_info["duration"], srt_path)
             subtitled = str(tempdir / "with_subtitle.mp4")
             burn_subtitles(current, srt_path, subtitled, cancel_event, pause_event, log)
             current = subtitled
@@ -932,14 +1188,10 @@ def _process_one_combo(
                 raise MediaError("已勾选水印，但未选择水印图片。")
             watermarked = str(tempdir / "with_watermark.mp4")
             apply_watermark(
-                current,
-                config.watermark_path,
-                watermarked,
-                width,
-                height,
-                cancel_event,
-                pause_event,
-                log,
+                current, config.watermark_path, watermarked, width, height,
+                cancel_event, pause_event, log,
+                mode=config.watermark_mode, position=config.watermark_position,
+                scale=config.watermark_scale, opacity=config.watermark_opacity,
             )
             current = watermarked
 
@@ -951,20 +1203,19 @@ def _process_one_combo(
 def _make_task_logger(
     callback: Optional[Callable[[str], None]],
 ) -> Callable[[str], None]:
-    if getattr(sys, "frozen", False):
-        log_dir = Path(sys.executable).resolve().parent / "logs"
-    else:
-        log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir = _app_root() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / f"task_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    lock = threading.Lock()
 
     def write(message: str) -> None:
         line = f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}"
         if callback:
             callback(line)
         try:
-            with log_file.open("a", encoding="utf-8") as f:
-                f.write(line + "\n")
+            with lock:
+                with log_file.open("a", encoding="utf-8") as f:
+                    f.write(line + "\n")
         except Exception:
             pass
 
@@ -1012,19 +1263,10 @@ def process_failed_items(
         for attempt in range(retry_count + 1):
             try:
                 _process_one_combo(
-                    head,
-                    tail,
-                    final_path,
-                    middle,
-                    pick_transition(config, idx),
-                    pick_bgm(config, idx, bgm_files),
-                    width,
-                    height,
-                    duration_limit,
-                    config,
-                    cancel_event,
-                    pause_event,
-                    logger,
+                    head, tail, final_path, middle,
+                    pick_transition(config, idx), pick_bgm(config, idx, bgm_files),
+                    width, height, duration_limit, config,
+                    cancel_event, pause_event, logger,
                 )
                 result.success += 1
                 result.success_items.append(
@@ -1052,16 +1294,3 @@ def process_failed_items(
     if progress:
         progress(len(failed_items), len(failed_items))
     return result
-
-
-def _unique_output_name(output_dir: Path, idx: int) -> str:
-    stamp = time.strftime("%H%M%S")
-    name = f"output_{idx:03d}_{stamp}.mp4"
-    if not (output_dir / name).exists():
-        return name
-    n = 1
-    while True:
-        candidate = f"output_{idx:03d}_{stamp}_{n}.mp4"
-        if not (output_dir / candidate).exists():
-            return candidate
-        n += 1
