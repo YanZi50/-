@@ -74,7 +74,7 @@
               <span class="card-hint" v-if="poolPickedCount">已固定中间素材 {{ poolPickedCount }} 条</span>
             </div>
             <template v-for="zone in materialZones" :key="zone.kind">
-            <div class="card" v-if="zone.kind!=='middle'">
+            <div class="card" v-if="zone.kind==='head' || zone.kind==='tail'">
               <div class="card-title">
                 <span class="bar"></span>{{ zone.title }}
                 <span class="card-hint" style="font-weight:400">{{ zone.hint }}</span>
@@ -190,6 +190,63 @@
                 </div>
                 <div v-else-if="pool.folder" class="empty" style="margin-top:10px">该文件夹未识别到视频文件</div>
                 <div v-else class="empty" style="margin-top:10px">选择或上传中间素材文件夹</div>
+              </div>
+            </div>
+
+            <!-- 背景音乐（放在中间素材池之后） -->
+            <div class="card">
+              <div class="card-title">
+                <span class="bar"></span>背景音乐
+                <span class="card-hint" style="font-weight:400">可选</span>
+                <button class="btn plain" style="margin-left:auto;padding:2px 10px"
+                        @click="toggleExpand('bgm')">
+                  {{ zoneExpanded['bgm'] ? '收起' : '展开' }}
+                </button>
+              </div>
+
+              <div class="folder-row">
+                <input class="input input-path" id="input_bgm" placeholder="可选：音乐文件夹"
+                       v-model="folders['bgm']" @change="scan('bgm')">
+                <span class="folder-count" v-if="materials['bgm'].length">
+                  {{ materials['bgm'].length }} 个
+                </span>
+                <button class="btn plain" @click="selectFolder('bgm')" :disabled="selectBusy">选择</button>
+              </div>
+
+              <div class="card-hint" style="margin-top:6px">
+                音乐文件（MP3/WAV/M4A/FLAC/OGG），固定或随机配乐
+              </div>
+
+              <div v-if="materials['bgm'].length && zoneExpanded['bgm']">
+                <div class="material-grid">
+                  <div class="material-card"
+                       v-for="m in materials['bgm'].slice(0, zoneShown['bgm'])" :key="m.path"
+                       :class="{ picked: fixed['bgm']===m.path, broken: !m.ok }"
+                       @click="toggleFixed('bgm', m.path)">
+                    <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
+                         :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl = ''">
+                    <div v-else class="empty-thumb">🎬</div>
+                    <div v-if="!m.ok" class="broken-badge">损坏</div>
+                    <div class="pick-badge">固定</div>
+                    <div class="meta">
+                      <div class="name" :title="m.name">{{ m.name }}</div>
+                      <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
+                    </div>
+                  </div>
+                </div>
+                <button v-if="materials['bgm'].length > zoneShown['bgm']"
+                        class="btn plain" style="margin-top:10px" @click="showMore('bgm')">
+                  加载更多（已显示 {{ Math.min(zoneShown['bgm'], materials['bgm'].length) }}/{{ materials['bgm'].length }}）
+                </button>
+              </div>
+              <div v-else-if="materials['bgm'].length" class="empty" style="margin-top:12px">
+                {{ materials['bgm'].length }} 个素材，点击「展开」查看
+              </div>
+              <div v-else-if="folders['bgm']" class="empty" style="margin-top:12px">
+                该文件夹未识别到音频文件
+              </div>
+              <div v-else class="empty" style="margin-top:12px">
+                选择或上传音乐文件夹
               </div>
             </div>
 
@@ -480,6 +537,13 @@
           <section v-show="step===3">
             <div class="card">
               <div class="card-title"><span class="bar"></span>任务控制</div>
+              <!-- 断点续跑：上次任务中断提示 -->
+              <div v-if="interrupted && !job.running" class="msg warn" style="border:1px solid var(--warn-soft)">
+                检测到上次{{ interruptedInfo ? interruptedInfo.label : '任务' }}中断（共 {{ interruptedInfo ? interruptedInfo.total : 0 }} 条）。
+                点击「继续生成」可从上次进度续跑（已完成输出自动跳过）。
+                <button class="btn soft" style="margin-left:6px" @click="resumeJob">继续生成</button>
+                <button class="btn plain danger" style="margin-left:6px" @click="discardInterrupted">放弃</button>
+              </div>
               <div v-if="precheckBad.length" class="msg warn">
                 预检发现 {{ precheckBad.length }} 个问题素材：{{ precheckBad.map(b=>b.name).join('、') }}，请处理后再批量生成
               </div>

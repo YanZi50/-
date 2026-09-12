@@ -46,10 +46,15 @@ if getattr(sys, "frozen", False):
     WEB_DIR = Path(sys._MEIPASS) / "web"
     UPLOAD_ROOT = Path(sys.executable).resolve().parent / "uploads"
     PREVIEW_DIR = Path(sys.executable).resolve().parent / "previews"
+    STATE_DIR = Path(sys.executable).resolve().parent / "state"
 else:
     WEB_DIR = Path(__file__).parent / "web"
     UPLOAD_ROOT = Path(__file__).parent / "uploads"
     PREVIEW_DIR = Path(__file__).parent / "previews"
+    STATE_DIR = Path(__file__).parent / "state"
+
+# 运行中任务快照：服务被强杀/重启后，据此恢复"上次任务中断"，支持断点续跑
+SNAPSHOT_FILE = STATE_DIR / "last_task.json"
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +87,42 @@ def register_standard_dirs() -> None:
 
 
 # ---------------------------------------------------------------------------
+# 运行中任务快照（断点续跑）：任务启动时写盘，正常结束/取消/异常时删除；
+# 只有进程被强杀/崩溃时残留，下次启动据此恢复"上次任务中断"
+# ---------------------------------------------------------------------------
+def _save_snapshot(config: JobConfig, label: str, total: int) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        SNAPSHOT_FILE.write_text(
+            json.dumps(
+                {"config": asdict(config), "label": label, "total": total, "started_at": time.time()},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass  # 快照失败不阻塞任务
+
+
+def _clear_snapshot() -> None:
+    try:
+        if SNAPSHOT_FILE.exists():
+            SNAPSHOT_FILE.unlink()
+    except Exception:
+        pass
+
+
+def _load_snapshot() -> dict | None:
+    try:
+        if not SNAPSHOT_FILE.exists():
+            return None
+        data = json.loads(SNAPSHOT_FILE.read_text(encoding="utf-8"))
+        return {"config": JobConfig(**data["config"]), "label": data.get("label", "任务"), "total": data.get("total", 0)}
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # 应用状态
 # ---------------------------------------------------------------------------
 class AppState:
@@ -101,6 +142,7 @@ class AppState:
         self.last_failed_items: list[dict] = []
         self.started_at: float | None = None
         self.samples: list[tuple[float, int]] = []
+        self.interrupted: dict | None = None
 
     def add_log(self, message: str) -> None:
         with self.lock:
@@ -171,6 +213,7 @@ class AppState:
                 "failed_items": self.result.failed_items if self.result else [],
                 "success_items": self.result.success_items if self.result else [],
                 "error": self.error,
+                "interrupted": self.interrupted,
             }
             samples = list(self.samples)
             started_at = self.started_at
@@ -473,6 +516,12 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/retry_failed":
             self._retry_failed()
             return
+        if route == "/api/resume":
+            self._resume()
+            return
+        if route == "/api/discard_interrupted":
+            self._discard_interrupted()
+            return
         if route == "/api/cancel":
             STATE.cancel_event.set()
             STATE.add_log("已请求取消")
@@ -704,10 +753,14 @@ class Handler(BaseHTTPRequestHandler):
         STATE.logs = []
         STATE.paused = False
         STATE.running = True
+        STATE.interrupted = None
+        _clear_snapshot()  # 新任务开始，放弃旧的中断快照
 
         total = len(failed_items) if mode == "retry" else config.count
         STATE.begin(total)
         STATE.add_log(f"{label}开始，共 {total} 条")
+        if mode == "batch":
+            _save_snapshot(config, label, total)
 
         def log(message: str) -> None:
             STATE.add_log(message)
@@ -746,6 +799,7 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 STATE.running = False
                 STATE.end()
+                _clear_snapshot()
 
         STATE.worker = threading.Thread(target=worker, daemon=True)
         STATE.worker.start()
@@ -761,6 +815,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         register_allowed_dir(config.output_folder)
         self._run_task(config, "任务", "batch")
+        self._send_json({"ok": True})
+
+    def _resume(self) -> None:
+        if STATE.running:
+            self._send_json({"ok": False, "error": "任务正在运行"})
+            return
+        if not STATE.interrupted or not STATE.last_config:
+            self._send_json({"ok": False, "error": "没有可继续的任务"})
+            return
+        config = STATE.last_config
+        register_allowed_dir(config.output_folder)
+        self._run_task(config, "继续任务", "batch")  # skip_existing 默认开启，已完成输出自动跳过
+        self._send_json({"ok": True})
+
+    def _discard_interrupted(self) -> None:
+        _clear_snapshot()
+        STATE.interrupted = None
         self._send_json({"ok": True})
 
     def _preview(self) -> None:
@@ -813,6 +884,11 @@ def tempfile_dir() -> str:
 
 def main() -> None:
     register_standard_dirs()
+    # 断点续跑：上次任务被强杀/重启时快照残留，恢复为"可继续"状态
+    snap = _load_snapshot()
+    if snap:
+        STATE.interrupted = {"exists": True, "label": snap["label"], "total": snap["total"]}
+        STATE.last_config = snap["config"]
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     url = f"http://{HOST}:{PORT}"
     print(f"网页版已启动：{url}")

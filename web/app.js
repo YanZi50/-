@@ -113,6 +113,8 @@ const state = reactive({
     eta: null, speed: null, error: null, logs: [],
     success_items: [], failed_items: [],
   },
+  interrupted: false,
+  interruptedInfo: null,
   previewUrl: '',
   outputFolder: '',
   outputFiles: [],
@@ -693,6 +695,22 @@ async function retryFailed() {
   showMsg('正在重试失败项', 'info');
 }
 
+/* ---------- 断点续跑 ---------- */
+async function resumeJob() {
+  const data = await api('/api/resume', { method: 'POST' });
+  if (!data.ok) { showMsg(data.error || '无法继续', 'error'); return; }
+  state.interrupted = false;
+  state.interruptedInfo = null;
+  state.job = { ...state.job, running: true, done: false, current: 0, total: 0, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
+  showMsg('继续生成中（已完成输出自动跳过）', 'success');
+}
+async function discardInterrupted() {
+  await api('/api/discard_interrupted', { method: 'POST' });
+  state.interrupted = false;
+  state.interruptedInfo = null;
+  showMsg('已放弃上次中断的任务', 'info');
+}
+
 /* ---------- 输出文件与打包 ---------- */
 async function refreshOutputFiles() {
   if (!state.outputFolder) return;
@@ -742,6 +760,14 @@ async function poll() {
     state.job.logs = s.logs || [];
     state.job.success_items = s.success_items || [];
     state.job.failed_items = s.failed_items || [];
+    // 断点续跑：检测到上次任务中断（服务重启后快照恢复）
+    if (s.interrupted && s.interrupted.exists && !state.interrupted) {
+      state.interrupted = true;
+      state.interruptedInfo = { label: s.interrupted.label || '任务', total: s.interrupted.total || 0 };
+      showMsg(`检测到上次${state.interruptedInfo.label}未完成（共 ${state.interruptedInfo.total} 条），可在「生成与结果」页继续`, 'warn');
+    } else if (!s.interrupted && state.interrupted) {
+      state.interrupted = false;
+    }
     if (!s.running && state.job.done === false && (s.success > 0 || s.failed > 0 || s.skipped > 0 || s.cancelled)) {
       state.job.done = true;
       if (s.success_items && s.success_items[0] && state.previewUrl === '' && state.job.total === 1) {
@@ -795,6 +821,7 @@ createApp({
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
       loadHistory, clearHistory, loadFromHistory,
       precheck, startJob, previewJob, togglePause, cancelJob, retryFailed,
+      resumeJob, discardInterrupted,
       downloadZip, Math,
     };
   },
