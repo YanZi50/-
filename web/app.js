@@ -71,6 +71,7 @@ const state = reactive({
   health: null,
   healthChecking: false,
   previewTrans: 'fade',
+  resultExpanded: false,
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
@@ -172,6 +173,10 @@ const resultRows = computed(() => {
   }));
   return rows.sort((a, b) => a.index - b.index);
 });
+const visibleRows = computed(() =>
+  state.resultExpanded ? resultRows.value : resultRows.value.slice(0, 5)
+);
+function toggleResults() { state.resultExpanded = !state.resultExpanded; }
 
 /* ---------- 转场预览 ---------- */
 const previewTransClass = computed(() =>
@@ -883,6 +888,7 @@ createApp({
       resumeJob, discardInterrupted,
       downloadZip, Math,
       previewTransClass, previewTransName,
+      visibleRows, toggleResults,
     };
   },
 }).mount('#app');

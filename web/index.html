@@ -597,12 +597,16 @@
               </div>
 
               <div class="table-wrap" v-if="resultRows.length">
+                <div class="result-head">
+                  <span>生成结果（{{ resultRows.length }} 条）</span>
+                  <span class="result-toggle" @click="toggleResults">{{ state.resultExpanded ? '收起 ▲' : '展开全部 ▾' }}</span>
+                </div>
                 <table class="tbl">
                   <thead>
                     <tr><th>#</th><th>开头</th><th>中间</th><th>结尾</th><th>状态</th><th>操作</th></tr>
                   </thead>
                   <tbody>
-                    <tr v-for="row in resultRows" :key="row.index">
+                    <tr v-for="row in visibleRows" :key="row.index">
                       <td>{{ row.index }}</td>
                       <td class="name-cell" :title="row.head">{{ fileName(row.head) }}</td>
                       <td class="name-cell" :title="row.middle || ''" style="color:var(--text-3)">{{ row.middle ? fileName(row.middle) : '—' }}</td>
@@ -615,6 +619,9 @@
                     </tr>
                   </tbody>
                 </table>
+                <div v-if="!state.resultExpanded && resultRows.length > 5" class="result-more" @click="toggleResults">
+                  还有 {{ resultRows.length - 5 }} 条结果，点击展开全部 ▾
+                </div>
               </div>
 
               <div class="btn-row" style="margin-top:12px" v-if="outputFiles.length">
