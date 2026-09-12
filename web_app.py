@@ -1,3 +1,12 @@
+# 便携版隔离：打包运行时剔除外部 PYTHONPATH 注入（如豆包 python-packages），
+# 确保模块一律从 _internal 打包副本加载，避免引用开发机路径导致换机不可用。
+import sys as _sys
+
+if getattr(_sys, "frozen", False):
+    _ppath = [p for p in _sys.path if p and "python-packages" in p]
+    for _p in _ppath:
+        _sys.path.remove(_p)
+
 import json
 import os
 import re
@@ -320,6 +329,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/status":
             self._send_json(STATE.status_dict())
+            return
+        if route == "/api/debug":
+            import video_engine
+            self._send_json({
+                "frozen": getattr(sys, "frozen", False),
+                "executable": sys.executable,
+                "meipass": getattr(sys, "_MEIPASS", None),
+                "web_dir": str(WEB_DIR),
+                "engine_file": video_engine.__file__,
+                "app_root": str(video_engine._app_root()),
+                "cache_dir": str(video_engine.cache_dir()),
+                "ffmpeg": video_engine._ffmpeg(),
+            })
             return
         if route == "/api/scan":
             head = (query.get("head") or [""])[0]
@@ -791,7 +813,11 @@ def tempfile_dir() -> str:
 def main() -> None:
     register_standard_dirs()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(f"网页版已启动：http://{HOST}:{PORT}")
+    url = f"http://{HOST}:{PORT}"
+    print(f"网页版已启动：{url}")
+    if getattr(sys, "frozen", False):
+        # 便携版：启动后自动打开默认浏览器
+        threading.Timer(1.0, lambda: __import__("webbrowser").open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

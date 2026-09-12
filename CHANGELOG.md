@@ -3,6 +3,16 @@
 > 每次 Git 提交都必须在本文档顶部新增对应说明，内容至少包含：
 > 更新了什么、改动了什么、作用是什么、修复了什么、优化了什么。
 
+## 2026-09-12（R7：便携版打包，任意 Windows 电脑免安装使用）
+
+- 新增：PyInstaller 打包为免安装版（`dist\信息流素材一键拼接\`），双击 exe 即用，自动打开浏览器。
+- 新增：`打包便携版.bat` —— 一键重新打包（PyInstaller + 自动把 FFmpeg 复制到 exe 旁）。
+- 引擎调整：`_ffmpeg()` 在打包（frozen）时优先查找 exe 旁 `bin\ffmpeg.exe`（用户数据区）。原因：实测本机环境中 PyInstaller `_internal` 目录内的可执行文件被系统防护拒绝访问/执行（cmd、Python 均 PermissionError/WinError 5），而 exe 旁目录正常；FFmpeg 必须放在 exe 旁才能保证换机可用。
+- 服务调整：web_app.py 顶部在打包运行时剔除外部 `PYTHONPATH` 注入（本机存在 `D:\Doubao\...\python-packages`），防止模块从开发机源码/包加载导致：①FFmpeg 引用开发机路径（换机即挂）；②缓存目录错落到项目目录。打包后模块一律从 `_internal` 打包副本加载。
+- 服务调整：打包运行时启动后自动打开浏览器（`webbrowser` 延迟 1s），免手动输入地址。
+- 新增调试端点 `/api/debug`（只读）：返回 frozen/executable/meipass/web_dir/engine_file/app_root/cache_dir/ffmpeg 运行时路径，便于排查便携版问题。
+- 验证：便携版在本机 `dist\` 与模拟换机副本（portable_test）双位置端到端通过：4 段任务成片 6.40s、yuv420p、1080×1920；FFmpeg 与缓存均跟随 exe 目录，不依赖开发机任何路径。全套 38 个自动化测试通过。
+
 ## 2026-09-12（R6：修复拼接音画不同步，三个根因）
 
 - 修复：拼接成片音画不同步 / 成片时长明显短于预期 / 成片体积异常偏大。

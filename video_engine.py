@@ -37,6 +37,9 @@ class CancelledError(Exception):
 def _ffmpeg() -> str:
     candidates = []
     if getattr(sys, "frozen", False):
+        # 便携版：优先 exe 旁 bin\ffmpeg.exe（用户数据区，规避部分环境对
+        # PyInstaller _internal 目录内可执行文件的访问限制）
+        candidates.append(Path(sys.executable).resolve().parent / "bin" / "ffmpeg.exe")
         candidates.append(Path(sys._MEIPASS) / "bin" / "ffmpeg.exe")
     candidates.append(Path(__file__).resolve().parent / "bin" / "ffmpeg.exe")
     try:
