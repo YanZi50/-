@@ -450,11 +450,6 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 SELECT_LOCK.release()
             return
-        if route == "/api/upload_path":
-            kind = (query.get("kind") or ["head"])[0]
-            path = self._upload_folder_for_kind(kind)
-            self._send_json({"path": str(path)})
-            return
         if route == "/api/list_output":
             folder = (query.get("folder") or [""])[0]
             self._list_output(folder)
@@ -552,54 +547,11 @@ class Handler(BaseHTTPRequestHandler):
             self._toggle_pause()
             self._send_json({"paused": STATE.paused})
             return
-        if route == "/api/upload":
-            self._upload_file(parsed)
-            return
         self._send_json({"error": "not found"}, 404)
 
     # ----------------------------------------------------------------
     # 素材与文件
     # ----------------------------------------------------------------
-    def _upload_folder_for_kind(self, kind: str) -> Path:
-        if kind == "head":
-            folder = UPLOAD_ROOT / "head"
-        elif kind == "tail":
-            folder = UPLOAD_ROOT / "tail"
-        elif kind == "middle":
-            folder = UPLOAD_ROOT / "middle"
-        elif kind in {"watermark", "bgm"}:
-            folder = UPLOAD_ROOT / "files"
-        elif re.fullmatch(r"middle_pool[1-5]", kind):
-            folder = UPLOAD_ROOT / kind
-        else:
-            folder = UPLOAD_ROOT / "files"
-        folder.mkdir(parents=True, exist_ok=True)
-        return folder
-
-    def _upload_file(self, parsed) -> None:
-        query = parse_qs(parsed.query)
-        kind = (query.get("kind") or ["files"])[0]
-        raw_name = (query.get("name") or ["file"])[0]
-        safe_name = Path(raw_name).name
-        if not safe_name:
-            self._send_json({"ok": False, "error": "文件名无效"}, 400)
-            return
-        length = int(self.headers.get("Content-Length", "0"))
-        if length <= 0:
-            self._send_json({"ok": False, "error": "没有收到文件内容"}, 400)
-            return
-        folder = self._upload_folder_for_kind(kind)
-        dest = folder / safe_name
-        with dest.open("wb") as f:
-            remaining = length
-            while remaining > 0:
-                chunk = self.rfile.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    break
-                f.write(chunk)
-                remaining -= len(chunk)
-        self._send_json({"ok": True, "path": str(dest)})
-
     def _list_output(self, folder: str) -> None:
         path = Path(folder)
         if not path.exists() or not path.is_dir():

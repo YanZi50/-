@@ -89,7 +89,6 @@
                   {{ materials[zone.kind].length }} 个
                 </span>
                 <button class="btn plain" @click="selectFolder(zone.kind)" :disabled="selectBusy">选择</button>
-                <button v-if="zone.uploadable" class="btn soft" @click="onPickFolderUpload(zone.kind)">上传</button>
               </div>
 
               <div v-if="zone.kind==='bgm'" class="card-hint" style="margin-top:6px">
@@ -125,7 +124,7 @@
                 该文件夹未识别到{{ zone.kind==='bgm' ? '音频' : '视频' }}文件
               </div>
               <div v-else class="empty" style="margin-top:12px">
-                选择或上传{{ zone.kind==='bgm' ? '音乐' : '素材' }}文件夹
+                选择{{ zone.kind==='bgm' ? '音乐' : '素材' }}文件夹
               </div>
             </div>
             </template>
@@ -156,7 +155,6 @@
                          v-model="pool.folder" @change="scanPool(pool)">
                   <span class="folder-count" v-if="pool.files.length">{{ pool.files.length }} 个</span>
                   <button class="btn plain" @click="selectPoolFolder(pool)" :disabled="selectBusy">选择</button>
-                  <button class="btn soft" @click="pickPoolUpload(pool)">上传</button>
                 </div>
                 <div class="card-hint" style="margin-top:6px">
                   勾选该池素材（最多 10 条，按勾选顺序插入）；未勾选时从该池随机抽取 {{ pool.count }} 条
@@ -187,7 +185,7 @@
                   {{ pool.files.length }} 个素材，点击「展开」查看
                 </div>
                 <div v-else-if="pool.folder" class="empty" style="margin-top:10px">该文件夹未识别到视频文件</div>
-                <div v-else class="empty" style="margin-top:10px">选择或上传中间素材文件夹</div>
+                <div v-else class="empty" style="margin-top:10px">选择中间素材文件夹</div>
               </div>
             </div>
 
@@ -244,7 +242,7 @@
                 该文件夹未识别到音频文件
               </div>
               <div v-else class="empty" style="margin-top:12px">
-                选择或上传音乐文件夹
+                选择音乐文件夹
               </div>
             </div>
 

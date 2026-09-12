@@ -457,7 +457,6 @@ async function selectFolder(kind) {
     state.folders[kind] = data.path;
     if (kind === 'output') { state.stepErrors[1] = false; showMsg('输出路径已选择', 'success'); return; }
     scan(kind);
-    if (kind === 'head' && !state.folders.output) state.folders.output = data.path.replace(/[\\/][^\\/]+$/, '') + '\\output';
   } catch (e) {
     showMsg('选择失败：' + e.message, 'error');
   } finally {
@@ -481,85 +480,7 @@ async function selectPoolFolder(pool) {
   }
 }
 
-/* ---------- 上传 ---------- */
-function pickFolderUpload(kind, input) {
-  if (!input) return;
-  input.value = '';
-  input.onchange = async () => {
-    const files = Array.from(input.files || []);
-    if (!files.length) return;
-    let ok = 0;
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      try {
-        await uploadFileXhr(kind, f, (pct) => {
-          showMsg(`正在上传 ${i + 1}/${files.length}：${f.name} ${pct}%`, 'info');
-        });
-        ok++;
-      } catch (e) {
-        showMsg(`上传失败：${f.name} ${e.message}`, 'error');
-      }
-    }
-    const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
-    if (data.path) {
-      state.folders[kind] = data.path;
-      const m = data.path.match(/(head|tail|middle)$/);
-      if (m && !state.folders.output) state.folders.output = data.path.replace(/(head|tail|middle)$/, 'output');
-      showMsg(`上传完成 ${ok}/${files.length} 个文件`, 'success');
-      scan(kind);
-    }
-  };
-  input.click();
-}
-
-function pickPoolUpload(pool) {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.accept = 'video/*';
-  const kind = 'middle_pool' + pool.id;
-  input.onchange = async () => {
-    const files = Array.from(input.files || []);
-    if (!files.length) return;
-    let ok = 0;
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      try {
-        await uploadFileXhr(kind, f, (pct) => {
-          showMsg(`正在上传 ${i + 1}/${files.length}：${f.name} ${pct}%`, 'info');
-        });
-        ok++;
-      } catch (e) {
-        showMsg(`上传失败：${f.name} ${e.message}`, 'error');
-      }
-    }
-    const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
-    if (data.path) {
-      pool.folder = data.path;
-      showMsg(`上传完成 ${ok}/${files.length} 个文件`, 'success');
-      scanPool(pool);
-    }
-  };
-  input.click();
-}
-
-function uploadFileXhr(kind, file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(file.name));
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      try {
-        const data = JSON.parse(xhr.responseText);
-        data.ok ? resolve(data) : reject(new Error(data.error || '上传失败'));
-      } catch (e) { reject(new Error('响应解析失败')); }
-    };
-    xhr.onerror = () => reject(new Error('网络错误'));
-    xhr.send(file);
-  });
-}
+/* ---------- 上传（已移除：素材库改为仅「选择」本地文件夹，不再拷贝副本） ---------- */
 
 async function pickWatermark(e) {
   const file = e.target.files && e.target.files[0];
@@ -852,9 +773,6 @@ async function poll() {
 
 createApp({
   setup() {
-    const dirPicker = ref(null);
-    const onPickFolderUpload = (kind) => pickFolderUpload(kind, dirPicker.value);
-
     onMounted(() => {
       document.documentElement.dataset.theme = state.theme;
       Promise.all([
@@ -877,9 +795,9 @@ createApp({
       transitionOptions, watermarkScalePct, watermarkOpacityPct,
       progressPct, logHtml, poolPickedCount, resultRows,
       toggleTheme, toggleChip, randomizeSeed,
-      selectFolder, onPickFolderUpload, pickWatermark, dirPicker,
+      selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
-      selectPoolFolder, pickPoolUpload, addMiddlePool, removeMiddlePool, scanPool,
+      selectPoolFolder, addMiddlePool, removeMiddlePool, scanPool,
       togglePoolItem, poolOrder, togglePoolExpand, showPoolMore,
       toggleExpand, showMore, expandAll, collapseAll,
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
