@@ -23,14 +23,12 @@
         </div>
 
         <nav class="steps">
-          <div class="step-item" :class="{active: step===1, done: step>1}" @click="step=1">
-            <span class="step-num" v-if="step!==1 && step>1">✓</span>
-            <span class="step-num" v-else>1</span>
+          <div class="step-item" :class="{active: step===1, error: stepErrors[1]}" @click="step=1" :title="stepErrors[1] ? '输出目录未选择，请补齐' : ''">
+            <span class="step-num">1</span>
             <span>素材库</span>
           </div>
-          <div class="step-item" :class="{active: step===2, done: step>2}" @click="step=2">
-            <span class="step-num" v-if="step>2">✓</span>
-            <span class="step-num" v-else>2</span>
+          <div class="step-item" :class="{active: step===2}" @click="step=2">
+            <span class="step-num">2</span>
             <span>参数配置</span>
           </div>
           <div class="step-item" :class="{active: step===3}" @click="step=3">
@@ -254,7 +252,7 @@
               <div class="card-title"><span class="bar"></span>输出目录</div>
               <div class="folder-row">
                 <input class="input input-path" id="input_output" placeholder="成片保存位置（必填）"
-                       v-model="folders.output">
+                       v-model="folders.output" @change="scan('output')">
                 <button class="btn plain" @click="selectFolder('output')" :disabled="selectBusy">选择</button>
               </div>
               <div class="card-hint" style="margin-top:8px">

@@ -113,18 +113,36 @@ body::before {
 
 .steps { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .step-item {
+  position: relative;
   display: flex; align-items: center; gap: 10px;
   padding: 10px 12px; border-radius: var(--radius);
   color: var(--text-2); cursor: pointer; user-select: none;
   border: 1px solid transparent;
   transition: all var(--speed);
 }
-.step-item:hover { background: var(--card); }
+.step-item:hover { background: var(--card); color: var(--text-1); transform: translateX(1px); }
 .step-item.active {
   background: var(--accent-soft);
   color: var(--accent);
   border-color: var(--accent);
   font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.step-item.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger);
+  animation: step-error-pulse 1.6s ease-in-out infinite;
+}
+.step-item.error::after {
+  content: ''; position: absolute; right: 10px; top: 50%;
+  width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+@keyframes step-error-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.25); }
+  50% { box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.08); }
 }
 .step-num {
   width: 22px; height: 22px; border-radius: 7px;
@@ -132,9 +150,11 @@ body::before {
   font-size: 12px; font-weight: 700;
   background: var(--card); color: var(--text-3);
   border: 1px solid var(--line);
+  transition: all var(--speed);
 }
-.step-item.active .step-num { background: var(--accent); color: #fff; border-color: var(--accent); }
-.step-item.done .step-num { background: var(--success-soft); color: var(--success); border-color: var(--success); }
+.step-item:hover .step-num { color: var(--text-1); border-color: var(--accent); }
+.step-item.active .step-num { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 3px 10px rgba(59, 130, 246, 0.35); }
+.step-item.error .step-num { background: var(--danger); color: #fff; border-color: var(--danger); box-shadow: 0 3px 10px rgba(248, 113, 113, 0.35); }
 
 .sidebar-foot { margin-top: auto; padding: 0 4px; display: flex; flex-direction: column; gap: 10px; }
 .theme-toggle {

@@ -63,6 +63,7 @@ const transitionOptions = [
 /* ---------- 全局状态 ---------- */
 const state = reactive({
   step: 1,
+  stepErrors: { 1: false, 2: false, 3: false },
   theme: localStorage.getItem('sppj_theme') || 'dark',
   serverOk: true,
   selectBusy: false,
@@ -281,6 +282,7 @@ async function scan(kind) {
   }
   const folder = state.folders[kind].trim();
   if (!folder) { state.materials[kind] = []; return; }
+  if (kind === 'output') { state.stepErrors[1] = false; return; } // 必填项已填：素材库取消标红（输出目录无需扫描素材）
   try {
     const q = new URLSearchParams({ [kind]: folder });
     const data = await api('/api/scan?' + q.toString());
@@ -434,7 +436,7 @@ async function selectFolder(kind) {
     if (data.busy) { showMsg('文件夹选择窗口已打开', 'info'); return; }
     if (!data.path) return;
     state.folders[kind] = data.path;
-    if (kind === 'output') { showMsg('输出路径已选择', 'success'); return; }
+    if (kind === 'output') { state.stepErrors[1] = false; showMsg('输出路径已选择', 'success'); return; }
     scan(kind);
     if (kind === 'head' && !state.folders.output) state.folders.output = data.path.replace(/[\\/][^\\/]+$/, '') + '\\output';
   } catch (e) {
@@ -662,7 +664,12 @@ async function precheck() {
 async function startJob() {
   const payload = collectConfig();
   if (!payload.head_folder || !payload.tail_folder) { showMsg('请先填写开头和结尾文件夹', 'error'); return; }
-  if (!payload.output_folder) { showMsg('请选择输出路径', 'error'); return; }
+  if (!payload.output_folder) {
+    state.stepErrors[1] = true; // 必填项缺失：素材库步骤标红
+    showMsg('请选择输出目录（左侧「素材库」已标红）', 'error');
+    return;
+  }
+  state.stepErrors[1] = false;
   const data = await api('/api/start', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
