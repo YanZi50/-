@@ -593,6 +593,19 @@ class Handler(BaseHTTPRequestHandler):
         if bgm_mode == "音乐文件夹固定" and not fixed_bgm:
             return "请选择固定 BGM"
 
+        middle_folder = str(payload.get("middle_folder", "")).strip()
+        fixed_middle = str(payload.get("fixed_middle") or "").strip() or None
+        middle_items = [str(x).strip() for x in payload.get("middle_items", []) if str(x).strip()]
+        middle_items = middle_items[:10]
+        if fixed_middle and not middle_items:
+            middle_items = [fixed_middle]  # 兼容旧配置
+        middle_count_raw = payload.get("middle_count")
+        middle_count = None if middle_count_raw is None else _safe_int(middle_count_raw, 1, 0, 10)
+        if middle_items and not middle_folder:
+            return "已勾选固定中间素材，请先填写中间素材文件夹"
+        if middle_count and not middle_folder:
+            return "已设置随机中间片段，请先填写中间素材文件夹"
+
         return JobConfig(
             head_folder=head_folder,
             tail_folder=tail_folder,
@@ -620,8 +633,10 @@ class Handler(BaseHTTPRequestHandler):
             output_name_template=str(payload.get("output_name_template", "output_{序号}_{开头}_{结尾}")),
             random_seed=_safe_int(payload.get("random_seed", 20260905), 20260905),
             dedupe_enabled=bool(payload.get("dedupe_enabled", True)),
-            middle_folder=str(payload.get("middle_folder", "")).strip(),
-            fixed_middle=str(payload.get("fixed_middle") or "").strip() or None,
+            middle_folder=middle_folder,
+            fixed_middle=fixed_middle,
+            middle_items=middle_items,
+            middle_count=middle_count,
             use_subtitle=use_subtitle,
             watermark_mode=str(payload.get("watermark_mode", "铺满全屏")),
             watermark_position=str(payload.get("watermark_position", "右下角")),

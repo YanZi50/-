@@ -151,6 +151,103 @@ class EngineV2Tests(unittest.TestCase):
         after = len(list(norm_dir.glob("*.mp4")))
         self.assertGreater(after, before, "统一响度开关应产生独立缓存项")
 
+    def test_middle_multi_items_fixed_sequence(self) -> None:
+        """固定勾选多条中间素材：按勾选顺序插入头尾之间。"""
+        mid = self.temp / "middle"
+        mid.mkdir()
+        make_clip(self.head / "h.mp4", "blue")
+        make_clip(self.tail / "t.mp4", "red")
+        make_clip(mid / "m1.mp4", "green")
+        make_clip(mid / "m2.mp4", "yellow")
+        middle_paths = [str(mid / "m1.mp4"), str(mid / "m2.mp4")]
+        logs: list[str] = []
+        result = process_batch(
+            self._config(count=1, middle_folder=str(mid), middle_items=middle_paths),
+            threading.Event(), threading.Event(), log=logs.append,
+        )
+        self.assertEqual(result.success, 1)
+        self.assertEqual(result.failed, 0)
+        item = result.success_items[0]
+        self.assertEqual(item["middle_files"], middle_paths)
+        self.assertIn("m1.mp4、m2.mp4", item["middle"])
+        out = Path(item["output"])
+        info = probe_media(str(out))
+        self.assertTrue(info["has_video"])
+        # 头+2中间+尾 = 4 个 1.5s 片段 ≈ 6s（允许转场缩短/编码误差）
+        self.assertGreaterEqual(info["duration"], 5.0)
+        gen_log = "\n".join(logs)
+        self.assertIn("m1.mp4", gen_log)
+
+    def test_middle_random_count(self) -> None:
+        """未勾选固定中间时，按 middle_count 随机抽取多条。"""
+        mid = self.temp / "middle"
+        mid.mkdir()
+        make_clip(self.head / "h.mp4", "blue")
+        make_clip(self.tail / "t.mp4", "red")
+        for i in range(3):
+            make_clip(mid / f"m{i}.mp4", "green")
+        result = process_batch(
+            self._config(count=2, middle_folder=str(mid), middle_count=2),
+            threading.Event(), threading.Event(),
+        )
+        self.assertEqual(result.success, 2)
+        for item in result.success_items:
+            self.assertEqual(len(item.get("middle_files") or []), 2, "每条应插入 2 个中间片段")
+            out = Path(item["output"])
+            info = probe_media(str(out))
+            self.assertGreaterEqual(info["duration"], 5.0)
+
+    def test_middle_items_missing_raises(self) -> None:
+        mid = self.temp / "middle"
+        mid.mkdir()
+        make_clip(self.head / "h.mp4", "blue")
+        make_clip(self.tail / "t.mp4", "red")
+        make_clip(mid / "m1.mp4", "green")
+        with self.assertRaises(Exception):
+            process_batch(
+                self._config(count=1, middle_folder=str(mid), middle_items=[str(mid / "ghost.mp4")]),
+                threading.Event(), threading.Event(),
+            )
+
+    def test_transition_extended_types_playable(self) -> None:
+        """新增转场类型（smoothleft/diagtl/zoomin/pixelize/circlecrop）可正常编码。"""
+        make_clip_with_audio(self.head / "h.mp4", "blue")
+        make_clip_with_audio(self.tail / "t.mp4", "red")
+        for ttype in ["smoothleft", "diagtl", "zoomin", "pixelize", "circlecrop"]:
+            out_dir = self.temp / ("out_" + ttype)
+            out_dir.mkdir()
+            result = process_batch(
+                self._config(
+                    count=1, output_folder=str(out_dir),
+                    transition_mode="固定", transition_type=ttype, transition_duration=0.4,
+                ),
+                threading.Event(), threading.Event(),
+            )
+            self.assertEqual(result.success, 1, f"转场 {ttype} 应成功")
+            info = probe_media(str(Path(result.success_items[0]["output"])))
+            self.assertTrue(info["has_video"])
+
+    def test_middle_with_transition(self) -> None:
+        """多条中间 + 转场：链式 xfade 拼接可播放。"""
+        mid = self.temp / "middle"
+        mid.mkdir()
+        make_clip_with_audio(self.head / "h.mp4", "blue")
+        make_clip_with_audio(self.tail / "t.mp4", "red")
+        make_clip_with_audio(mid / "m1.mp4", "green")
+        make_clip_with_audio(mid / "m2.mp4", "yellow")
+        result = process_batch(
+            self._config(
+                count=1,
+                middle_folder=str(mid),
+                middle_items=[str(mid / "m1.mp4"), str(mid / "m2.mp4")],
+                transition_mode="固定", transition_type="fade", transition_duration=0.4,
+            ),
+            threading.Event(), threading.Event(),
+        )
+        self.assertEqual(result.success, 1)
+        info = probe_media(str(Path(result.success_items[0]["output"])))
+        self.assertTrue(info["has_video"])
+
 
 if __name__ == "__main__":
     unittest.main()

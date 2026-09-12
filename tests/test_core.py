@@ -124,7 +124,8 @@ class CorePipelineTests(unittest.TestCase):
         result = process_batch(config, threading.Event(), threading.Event())
         self.assertEqual(result.success, 1)
         self.assertEqual(result.failed, 0)
-        self.assertEqual(result.success_items[0]["middle"], str(middle / "m.mp4"))
+        self.assertEqual(result.success_items[0]["middle"], "m.mp4")
+        self.assertEqual(result.success_items[0]["middle_files"], [str(middle / "m.mp4")])
 
     def test_scan_and_probe(self) -> None:
         make_clip(self.head / "a.mp4", "blue")

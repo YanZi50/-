@@ -3,6 +3,21 @@
 > 每次 Git 提交都必须在本文档顶部新增对应说明，内容至少包含：
 > 更新了什么、改动了什么、作用是什么、修复了什么、优化了什么。
 
+## 2026-09-12（R4：中间片段多序列、素材预览折叠、转场库扩充）
+
+- 更新：①中间素材从"三段式单条"升级为"头尾固定 + 中间任意添加多条"；②素材预览默认折叠并分批加载，适配几百条素材；③随机转场支持自定义时长，转场效果从 10 种扩充到 39 种。
+- 改动：
+  - 引擎（`video_engine.py`）：
+    - `JobConfig` 新增 `middle_items`（固定勾选多条，按勾选顺序插入头尾之间，最多 10 条）与 `middle_count`（未勾选时从中间池随机抽取条数，0 表示不插；为 `None` 时兼容旧行为——中间文件夹存在则默认插 1 条）；
+    - 新增 `pick_middle_sequence` 统一决策中间序列；新增 `concat_chain` 通用 N 片段拼接（链式 xfade/acrossfade，标签以 `[v]`/`[a]` 收尾）；
+    - `_process_one_combo`/`_process_one_item`/`process_batch`/`process_failed_items` 全部改为多中间片段；结果 `middle` 字段改为显示名（多条顿号连接），新增 `middle_files` 路径列表供失败重试；
+    - `DEFAULT_TRANSITIONS` 由 10 种扩到 39 种：新增 wipeup/wipedown/circlecrop/smooth×4/diag×4/zoomin/pixelize/fadeblack/fadewhite/cover×4/reveal×4/vertopen/vertclose/horzopen/horzclose/squeezeh/squeezev；
+  - 服务层（`web_app.py`）：`_make_config` 接收并校验 `middle_items`（≤10 条）/`middle_count`（0-10，缺省为 None 兼容旧配置），`fixed_middle` 自动并入 `middle_items`；
+  - 前端（`web/`）：素材区每类素材默认折叠（显示数量摘要 + 展开按钮），展开后分批渲染（24 个/批 + 加载更多），支持全部展开/收起；中间素材卡片可多选（按点击顺序显示序号徽标，最多 10 条）；参数页新增"中间素材"卡片（随机中间片段数滑杆）与"随机转场时长"输入；随机转场池展示全部 39 种效果（滚动容器）。
+- 作用：满足"头尾固定、中间任意添加多条"的拼接需求；几百条素材的文件夹不再一次性渲染全部卡片与缩略图，界面不卡顿；转场时长在随机模式下同样可控，效果选择大幅增加。
+- 修复：`concat_chain` 链式滤镜最后输出标签与 `-map [v]/[a]` 不一致导致 FFmpeg 返回码 -22 的问题。
+- 优化：新增 6 个测试用例（固定多条中间、随机抽取数量、勾选素材缺失校验、新转场类型可编码、多条中间+转场），全套 31 个测试通过；浏览器实测：折叠/展开、中间多选（序号徽标）、参数页新选项、4 片段任务端到端（结果表中间列显示"m1.mp4、m2.mp4"、ZIP 打包、成片可播放）。
+
 ## 2026-09-12（R3 前端重写：Vue3 三步工作台、双主题设计系统）
 
 - 更新：Web 前端整体重写为 Vue3 三步向导工作台（素材库 → 参数配置 → 生成与结果），全部依赖本地化（`web/vendor/vue.global.prod.js`），无外部 CDN、无构建步骤。

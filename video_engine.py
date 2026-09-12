@@ -371,6 +371,75 @@ def concat_three(
     run_ffmpeg(args, cancel_event, pause_event, log)
 
 
+def concat_chain(
+    clips: list[str],
+    dst: str,
+    durations: list[float],
+    cancel_event,
+    pause_event,
+    transition_type: Optional[str] = None,
+    transition_duration: float = 0.5,
+    log: Optional[Callable[[str], None]] = None,
+) -> None:
+    """通用 N 片段拼接：转场可用时链式 xfade，否则 concat 滤镜硬接。"""
+    n = len(clips)
+    if n < 2:
+        raise MediaError("拼接至少需要两个片段。")
+    if n == 2:
+        concat_two(clips[0], clips[1], dst, durations[0], durations[1],
+                   cancel_event, pause_event, transition_type, transition_duration, log)
+        return
+    inputs: list[str] = []
+    for clip in clips:
+        inputs += ["-i", clip]
+    can_transition = (
+        transition_type
+        and len(durations) == n
+        and all(d >= transition_duration + 0.2 for d in durations)
+    )
+    if can_transition:
+        d = min(transition_duration, *(x - 0.2 for x in durations))
+        v_parts = [f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={durations[0] - d:.3f}[v1]"]
+        for i in range(1, n - 1):
+            off = sum(durations[: i + 1]) - d
+            out_label = "[v]" if i == n - 2 else f"[v{i + 1}]"
+            v_parts.append(f"[v{i}][{i + 1}:v]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
+        a_parts = [f"[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1]"]
+        for i in range(1, n - 1):
+            out_label = "[a]" if i == n - 2 else f"[a{i + 1}]"
+            a_parts.append(f"[a{i}][{i + 1}:a]acrossfade=d={d:.3f}:c1=tri:c2=tri{out_label}")
+        fc = ";".join(v_parts + a_parts)
+    else:
+        streams = []
+        for i in range(n):
+            streams += [f"[{i}:v]", f"[{i}:a]"]
+        fc = "".join(streams) + f"concat=n={n}:v=1:a=1[v][a]"
+    args = (
+        [_ffmpeg(), "-y"]
+        + inputs
+        + [
+            "-filter_complex",
+            fc,
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            dst,
+        ]
+    )
+    run_ffmpeg(args, cancel_event, pause_event, log)
+
+
 def concat_copy(clips: list[str], dst: str, cancel_event, pause_event, log: Optional[Callable[[str], None]] = None) -> None:
     """无转场且素材已归一化时，用 concat demuxer 流复制拼接，避免重编码。"""
     tempdir = Path(tempfile.mkdtemp(prefix="sppj_concat_"))
@@ -724,6 +793,8 @@ class JobConfig:
     dedupe_enabled: bool = True
     middle_folder: str = ""
     fixed_middle: Optional[str] = None
+    middle_items: list[str] = field(default_factory=list)
+    middle_count: Optional[int] = None
     use_subtitle: bool = False
     watermark_mode: str = "铺满全屏"
     watermark_position: str = "右下角"
@@ -754,7 +825,19 @@ def resolve_resolution(value: str) -> tuple[int, int]:
     return 1920, 1080
 
 
-DEFAULT_TRANSITIONS = ["fade", "dissolve", "slideleft", "slideright", "slideup", "slidedown", "circleopen", "circleclose", "wipeleft", "wiperight"]
+DEFAULT_TRANSITIONS = [
+    "fade", "dissolve",
+    "slideleft", "slideright", "slideup", "slidedown",
+    "wipeleft", "wiperight", "wipeup", "wipedown",
+    "circleopen", "circleclose", "circlecrop",
+    "smoothleft", "smoothright", "smoothup", "smoothdown",
+    "diagtl", "diagtr", "diagbl", "diagbr",
+    "zoomin", "pixelize", "fadeblack", "fadewhite",
+    "coverleft", "coverright", "coverup", "coverdown",
+    "revealleft", "revealright", "revealup", "revealdown",
+    "vertopen", "vertclose", "horzopen", "horzclose",
+    "squeezeh", "squeezev",
+]
 
 
 def pick_transition(config: "JobConfig", index: int) -> Optional[str]:
@@ -769,6 +852,34 @@ def pick_transition(config: "JobConfig", index: int) -> Optional[str]:
     if config.use_transition:
         return config.transition_type or "fade"
     return None
+
+
+def pick_middle_sequence(config: "JobConfig", middle_files: list[str], index: int) -> list[str]:
+    """确定一条成片使用的中间片段序列：固定勾选多条优先，否则按 middle_count 随机抽取。
+
+    middle_count 为 None 表示未显式配置：兼容旧行为，中间文件夹存在时默认插入 1 条（轮流）；
+    显式 0 表示不插入中间片段。
+    """
+    if not middle_files:
+        return []
+    if config.middle_items:
+        return [p for p in config.middle_items if p in middle_files]
+    count = config.middle_count
+    if count is None:
+        count = 1
+    count = max(0, min(10, int(count)))
+    if count <= 0:
+        return []
+    rng = random.Random(config.random_seed + index)
+    pool = middle_files[:]
+    rng.shuffle(pool)
+    return pool[: min(count, len(pool))]
+
+
+def middle_display(middle_items: list[str]) -> Optional[str]:
+    if not middle_items:
+        return None
+    return "、".join(Path(p).name for p in middle_items)
 
 
 def pick_bgm(config: "JobConfig", index: int, bgm_files: list[str]) -> Optional[str]:
@@ -869,7 +980,7 @@ def _process_one_item(
     idx: int,
     head: str,
     tail: str,
-    middle: Optional[str],
+    middle_items: list[str],
     final_path: Path,
     config: "JobConfig",
     width: int,
@@ -899,7 +1010,9 @@ def _process_one_item(
         if final_path.exists() and final_path.stat().st_size > 0:
             log(f"[{idx}] 已存在，跳过：{final_path}")
             return {"index": idx, "state": "skipped", "output": str(final_path)}
-        middle_desc = f" + {Path(middle).name}" if middle else ""
+        middle_desc = " + ".join(Path(p).name for p in middle_items)
+        if middle_desc:
+            middle_desc = " + " + middle_desc
         log(f"[{idx}] 开始生成：{Path(head).name}{middle_desc} + {Path(tail).name}")
         last_error = None
         for attempt in range(retry_count + 1):
@@ -910,7 +1023,7 @@ def _process_one_item(
                     head,
                     tail,
                     final_path,
-                    middle,
+                    middle_items,
                     pick_transition(config, idx),
                     pick_bgm(config, idx, bgm_files),
                     width,
@@ -922,7 +1035,12 @@ def _process_one_item(
                     log,
                 )
                 log(f"[{idx}] 完成：{final_path}")
-                return {"index": idx, "state": "success", "head": head, "tail": tail, "middle": middle, "output": str(final_path)}
+                return {
+                    "index": idx, "state": "success", "head": head, "tail": tail,
+                    "middle": middle_display(middle_items),
+                    "middle_files": middle_items,
+                    "output": str(final_path),
+                }
             except CancelledError:
                 return {"index": idx, "state": "cancelled"}
             except Exception as exc:
@@ -930,7 +1048,12 @@ def _process_one_item(
                 log(f"[{idx}] 第 {attempt + 1} 次失败：{exc}")
                 if attempt < retry_count:
                     time.sleep(1)
-        return {"index": idx, "state": "failed", "head": head, "tail": tail, "middle": middle, "error": str(last_error)}
+        return {
+            "index": idx, "state": "failed", "head": head, "tail": tail,
+            "middle": middle_display(middle_items),
+            "middle_files": middle_items,
+            "error": str(last_error),
+        }
 
 
 def process_batch(
@@ -958,6 +1081,9 @@ def process_batch(
         raise MediaError("固定结尾不在结尾文件夹中，请重新选择。")
     if config.fixed_middle and config.fixed_middle not in middle_files:
         raise MediaError("固定中间素材不在中间文件夹中，请重新选择。")
+    missing_middles = [p for p in (config.middle_items or []) if p not in middle_files]
+    if missing_middles:
+        raise MediaError(f"以下固定中间素材不在中间文件夹中：{'、'.join(Path(p).name for p in missing_middles)}")
     if config.bgm_mode == "音乐文件夹固定" and config.fixed_bgm and config.fixed_bgm not in bgm_files:
         raise MediaError("固定 BGM 不在音乐文件夹中，请重新选择。")
 
@@ -1000,17 +1126,16 @@ def process_batch(
 
     if workers <= 1:
         for idx, (head, tail) in enumerate(combos, 1):
-            middle = None
-            if middle_files:
-                middle = config.fixed_middle or middle_files[(idx - 1) % len(middle_files)]
-            final_name = render_output_name(config.output_name_template, idx, head, tail, middle)
+            middle_items = pick_middle_sequence(config, middle_files, idx)
+            first_middle = middle_items[0] if middle_items else None
+            final_name = render_output_name(config.output_name_template, idx, head, tail, first_middle)
             final_path = output_dir / final_name
             if skip_existing and final_path.exists() and final_path.stat().st_size > 0:
                 result.skipped += 1
                 on_done()
                 continue
             item = _process_one_item(
-                idx, head, tail, middle, final_path, config, width, height,
+                idx, head, tail, middle_items, final_path, config, width, height,
                 duration_limit, bgm_files, cancel_event, pause_event, logger,
                 retry_count, path_locks,
             )
@@ -1019,16 +1144,15 @@ def process_batch(
     else:
         tasks = []
         for idx, (head, tail) in enumerate(combos, 1):
-            middle = None
-            if middle_files:
-                middle = config.fixed_middle or middle_files[(idx - 1) % len(middle_files)]
-            final_name = render_output_name(config.output_name_template, idx, head, tail, middle)
+            middle_items = pick_middle_sequence(config, middle_files, idx)
+            first_middle = middle_items[0] if middle_items else None
+            final_name = render_output_name(config.output_name_template, idx, head, tail, first_middle)
             final_path = output_dir / final_name
-            tasks.append((idx, head, tail, middle, final_path))
+            tasks.append((idx, head, tail, middle_items, final_path))
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {}
-            for idx, head, tail, middle, final_path in tasks:
+            for idx, head, tail, middle_items, final_path in tasks:
                 if cancel_event.is_set():
                     result.cancelled = True
                     break
@@ -1038,7 +1162,7 @@ def process_batch(
                     continue
                 fut = executor.submit(
                     _process_one_item,
-                    idx, head, tail, middle, final_path, config, width, height,
+                    idx, head, tail, middle_items, final_path, config, width, height,
                     duration_limit, bgm_files, cancel_event, pause_event, logger,
                     retry_count, path_locks,
                 )
@@ -1069,6 +1193,7 @@ def _collect_item(result: BatchResult, item: dict) -> None:
                 "head": item.get("head", ""),
                 "tail": item.get("tail", ""),
                 "middle": item.get("middle"),
+                "middle_files": item.get("middle_files") or [],
                 "output": item.get("output", ""),
             }
         )
@@ -1082,6 +1207,7 @@ def _collect_item(result: BatchResult, item: dict) -> None:
                 "head": item.get("head", ""),
                 "tail": item.get("tail", ""),
                 "middle": item.get("middle"),
+                "middle_files": item.get("middle_files") or [],
                 "error": item.get("error", ""),
             }
         )
@@ -1095,7 +1221,7 @@ def _process_one_combo(
     head: str,
     tail: str,
     final_path: Path,
-    middle: Optional[str],
+    middle_items: list[str],
     transition_type: Optional[str],
     selected_bgm: Optional[str],
     width: int,
@@ -1110,10 +1236,8 @@ def _process_one_combo(
     try:
         head_info = probe_media(head)
         tail_info = probe_media(tail)
-        middle_info = probe_media(middle) if middle else None
         head_norm = str(tempdir / "head_norm.mp4")
         tail_norm = str(tempdir / "tail_norm.mp4")
-        middle_norm = str(tempdir / "middle_norm.mp4") if middle else None
         concat_path = str(tempdir / "concat.mp4")
         current = concat_path
 
@@ -1125,28 +1249,39 @@ def _process_one_combo(
             tail, tail_norm, width, height, tail_info["duration"], tail_info["has_audio"],
             cancel_event, pause_event, log, config.normalize_audio,
         )
-        if middle:
+
+        clips = [head_norm]
+        durations = [head_info["duration"]]
+        for i, middle in enumerate(middle_items, 1):
+            middle_info = probe_media(middle)
+            middle_norm = str(tempdir / f"middle_norm_{i}.mp4")
             normalize_clip(
                 middle, middle_norm, width, height, middle_info["duration"], middle_info["has_audio"],
                 cancel_event, pause_event, log, config.normalize_audio,
             )
-            concat_three(
-                head_norm, middle_norm, tail_norm, concat_path,
-                [head_info["duration"], middle_info["duration"], tail_info["duration"]],
-                cancel_event, pause_event, transition_type, config.transition_duration, log,
-            )
-        else:
+            clips.append(middle_norm)
+            durations.append(middle_info["duration"])
+        clips.append(tail_norm)
+        durations.append(tail_info["duration"])
+
+        n_clips = len(clips)
+        if n_clips == 2:
             if transition_type:
                 concat_two(
-                    head_norm, tail_norm, concat_path,
-                    head_info["duration"], tail_info["duration"],
+                    clips[0], clips[1], concat_path,
+                    durations[0], durations[1],
                     cancel_event, pause_event, transition_type, config.transition_duration, log,
                 )
             else:
                 # 无转场且素材已统一归一化，使用流复制快路径
-                concat_copy([head_norm, tail_norm], concat_path, cancel_event, pause_event, log)
+                concat_copy(clips, concat_path, cancel_event, pause_event, log)
+        else:
+            concat_chain(
+                clips, concat_path, durations,
+                cancel_event, pause_event, transition_type, config.transition_duration, log,
+            )
 
-        total_duration = head_info["duration"] + (middle_info["duration"] if middle else 0.0) + tail_info["duration"]
+        total_duration = sum(durations)
         if duration_limit and total_duration > duration_limit:
             trimmed = str(tempdir / "trimmed.mp4")
             trim_duration(concat_path, trimmed, duration_limit, cancel_event, pause_event, log)
@@ -1246,7 +1381,12 @@ def process_failed_items(
         idx = int(item.get("index", pos))
         head = str(item.get("head", ""))
         tail = str(item.get("tail", ""))
-        middle = str(item.get("middle") or "")
+        middle_files_retry = [str(p) for p in (item.get("middle_files") or []) if str(p)]
+        if not middle_files_retry and item.get("middle"):
+            # 兼容旧记录：middle 是单条路径
+            m = str(item.get("middle") or "")
+            if m and not m.startswith("、") and "、" not in m:
+                middle_files_retry = [m]
         if progress:
             progress(pos, len(failed_items))
         if cancel_event.is_set():
@@ -1254,23 +1394,31 @@ def process_failed_items(
             break
         while pause_event.is_set() and not cancel_event.is_set():
             time.sleep(0.2)
-        final_path = output_dir / render_output_name(config.output_name_template, idx, head, tail, middle or None)
+        first_middle = middle_files_retry[0] if middle_files_retry else None
+        final_path = output_dir / render_output_name(config.output_name_template, idx, head, tail, first_middle)
         if final_path.exists():
             final_path.unlink(missing_ok=True)
-        middle_desc = f" + {Path(middle).name}" if middle else ""
+        middle_desc = " + ".join(Path(p).name for p in middle_files_retry)
+        if middle_desc:
+            middle_desc = " + " + middle_desc
         logger(f"[{pos}/{len(failed_items)}] 重试：{Path(head).name}{middle_desc} + {Path(tail).name}")
         last_error = None
         for attempt in range(retry_count + 1):
             try:
                 _process_one_combo(
-                    head, tail, final_path, middle,
+                    head, tail, final_path, middle_files_retry,
                     pick_transition(config, idx), pick_bgm(config, idx, bgm_files),
                     width, height, duration_limit, config,
                     cancel_event, pause_event, logger,
                 )
                 result.success += 1
                 result.success_items.append(
-                    {"index": idx, "head": head, "tail": tail, "middle": middle, "output": str(final_path)}
+                    {
+                        "index": idx, "head": head, "tail": tail,
+                        "middle": middle_display(middle_files_retry),
+                        "middle_files": middle_files_retry,
+                        "output": str(final_path),
+                    }
                 )
                 last_error = None
                 logger(f"[{pos}/{len(failed_items)}] 重试完成：{final_path}")
@@ -1287,7 +1435,12 @@ def process_failed_items(
             message = f"[{pos}/{len(failed_items)}] 最终失败：{last_error}"
             result.errors.append(message)
             result.failed_items.append(
-                {"index": idx, "head": head, "tail": tail, "middle": middle or None, "error": str(last_error)}
+                {
+                    "index": idx, "head": head, "tail": tail,
+                    "middle": middle_display(middle_files_retry),
+                    "middle_files": middle_files_retry,
+                    "error": str(last_error),
+                }
             )
             logger(message)
 

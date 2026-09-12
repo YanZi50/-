@@ -25,10 +25,39 @@ const transitionOptions = [
   { value: 'slideright', label: '右滑' },
   { value: 'slideup', label: '上滑' },
   { value: 'slidedown', label: '下滑' },
-  { value: 'circleopen', label: '圆形打开' },
-  { value: 'circleclose', label: '圆形关闭' },
   { value: 'wipeleft', label: '左擦除' },
   { value: 'wiperight', label: '右擦除' },
+  { value: 'wipeup', label: '上擦除' },
+  { value: 'wipedown', label: '下擦除' },
+  { value: 'circleopen', label: '圆形打开' },
+  { value: 'circleclose', label: '圆形关闭' },
+  { value: 'circlecrop', label: '圆形裁剪' },
+  { value: 'smoothleft', label: '平滑左移' },
+  { value: 'smoothright', label: '平滑右移' },
+  { value: 'smoothup', label: '平滑上移' },
+  { value: 'smoothdown', label: '平滑下移' },
+  { value: 'diagtl', label: '对角(左上)' },
+  { value: 'diagtr', label: '对角(右上)' },
+  { value: 'diagbl', label: '对角(左下)' },
+  { value: 'diagbr', label: '对角(右下)' },
+  { value: 'zoomin', label: '放大进入' },
+  { value: 'pixelize', label: '像素化' },
+  { value: 'fadeblack', label: '黑场淡变' },
+  { value: 'fadewhite', label: '白场淡变' },
+  { value: 'coverleft', label: '左覆盖' },
+  { value: 'coverright', label: '右覆盖' },
+  { value: 'coverup', label: '上覆盖' },
+  { value: 'coverdown', label: '下覆盖' },
+  { value: 'revealleft', label: '左揭示' },
+  { value: 'revealright', label: '右揭示' },
+  { value: 'revealup', label: '上揭示' },
+  { value: 'revealdown', label: '下揭示' },
+  { value: 'vertopen', label: '垂直打开' },
+  { value: 'vertclose', label: '垂直关闭' },
+  { value: 'horzopen', label: '水平打开' },
+  { value: 'horzclose', label: '水平关闭' },
+  { value: 'squeezeh', label: '水平挤压' },
+  { value: 'squeezev', label: '垂直挤压' },
 ];
 
 /* ---------- 全局状态 ---------- */
@@ -41,6 +70,9 @@ const state = reactive({
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
+  middleSelected: [],
+  zoneExpanded: { head: false, tail: false, middle: false, bgm: false },
+  zoneShown: { head: 24, tail: 24, middle: 24, bgm: 24 },
   params: {
     count: 10,
     workers: 2,
@@ -49,6 +81,7 @@ const state = reactive({
     output_name_template: 'output_{序号}_{开头}_{结尾}',
     dedupe_enabled: true,
     random_seed: 20260905,
+    middle_count: 1,
     transition_mode: '不使用',
     transition_type: 'fade',
     transition_duration: 0.5,
@@ -169,7 +202,9 @@ function collectConfig() {
     output_folder: state.folders.output.trim(),
     fixed_head: state.fixed.head,
     fixed_tail: state.fixed.tail,
-    fixed_middle: state.fixed.middle,
+    fixed_middle: state.middleSelected.length === 1 ? state.middleSelected[0] : '',
+    middle_items: state.middleSelected.slice(),
+    middle_count: state.params.middle_count,
     ...state.params,
     bgm_folder: state.folders.bgm.trim(),
   };
@@ -185,6 +220,8 @@ function applyConfig(cfg) {
   state.fixed.head = cfg.fixed_head || '';
   state.fixed.tail = cfg.fixed_tail || '';
   state.fixed.middle = cfg.fixed_middle || '';
+  state.middleSelected = Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
+  if (!state.middleSelected.length && cfg.fixed_middle) state.middleSelected = [cfg.fixed_middle];
   const p = state.params;
   p.count = cfg.count ?? 10;
   p.workers = cfg.workers ?? 2;
@@ -193,6 +230,7 @@ function applyConfig(cfg) {
   p.output_name_template = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
   p.dedupe_enabled = cfg.dedupe_enabled !== false;
   p.random_seed = cfg.random_seed || 20260905;
+  p.middle_count = cfg.middle_count ?? 0;
   p.transition_mode = cfg.transition_mode || '不使用';
   p.transition_type = cfg.transition_type || 'fade';
   p.transition_duration = cfg.transition_duration || 0.5;
@@ -229,6 +267,7 @@ async function scan(kind) {
       path: f.path, name: f.name, ok: true, thumbUrl: thumbUrl(f.path),
     });
     if (kind === 'head' || kind === 'tail' || kind === 'middle') syncFixed(kind);
+    if (kind === 'middle') syncMiddleSelected();
   } catch (e) {
     showMsg('素材扫描失败：' + e.message, 'error');
   }
@@ -279,11 +318,46 @@ function syncFixed(kind) {
   if (state.fixed[kind] && !paths.includes(state.fixed[kind])) state.fixed[kind] = '';
 }
 
+function syncMiddleSelected() {
+  const paths = new Set(state.materials.middle.map((m) => m.path));
+  state.middleSelected = state.middleSelected.filter((p) => paths.has(p));
+}
+
 function toggleFixed(kind, path) {
-  if (!['head', 'tail', 'middle'].includes(kind)) return;
+  if (!['head', 'tail'].includes(kind)) return;
   state.fixed[kind] = state.fixed[kind] === path ? '' : path;
   const name = materialsName(kind);
   showMsg(state.fixed[kind] ? `已固定${name}` : `已取消固定${name}`);
+}
+
+function toggleMiddle(path) {
+  const i = state.middleSelected.indexOf(path);
+  if (i >= 0) {
+    state.middleSelected.splice(i, 1);
+    showMsg(`已移除中间素材（剩余 ${state.middleSelected.length} 条）`);
+  } else {
+    if (state.middleSelected.length >= 10) { showMsg('固定中间素材最多 10 条', 'error'); return; }
+    state.middleSelected.push(path);
+    showMsg(`已添加中间素材（共 ${state.middleSelected.length} 条，按勾选顺序插入）`);
+  }
+}
+
+function middleOrder(path) {
+  const i = state.middleSelected.indexOf(path);
+  return i >= 0 ? i + 1 : 0;
+}
+
+function toggleExpand(kind) {
+  state.zoneExpanded[kind] = !state.zoneExpanded[kind];
+}
+function showMore(kind) {
+  state.zoneShown[kind] += 24;
+}
+function expandAll() {
+  ['head', 'tail', 'middle', 'bgm'].forEach((k) => { state.zoneExpanded[k] = true; });
+}
+function collapseAll() {
+  ['head', 'tail', 'middle', 'bgm'].forEach((k) => { state.zoneExpanded[k] = false; });
 }
 
 function materialsName(kind) {
@@ -612,7 +686,8 @@ createApp({
       progressPct, logHtml, resultRows,
       toggleTheme, toggleChip,
       selectFolder, onPickFolderUpload, pickWatermark, dirPicker,
-      scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
+      scan, toggleFixed, toggleMiddle, middleOrder, fileName, shortError, fmtEta, makeDownloadUrl,
+      toggleExpand, showMore, expandAll, collapseAll,
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
       loadHistory, clearHistory, loadFromHistory,
       precheck, startJob, previewJob, togglePause, cancelJob, retryFailed,
