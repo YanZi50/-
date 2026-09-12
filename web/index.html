@@ -1,812 +1,447 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>信息流素材一键拼接</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f5f7fb;
-      --card: #ffffff;
-      --line: #e2e8f0;
-      --text: #172033;
-      --muted: #64748b;
-      --accent: #2563eb;
-      --accent-hover: #1d4ed8;
-      --danger: #dc2626;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
-      line-height: 1.55;
-    }
-    .page { max-width: 980px; margin: 0 auto; padding: 24px 18px 48px; }
-    h1 { font-size: 26px; margin: 0 0 6px; }
-    .subtitle { color: var(--muted); margin: 0 0 20px; }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 18px;
-      margin-bottom: 16px;
-      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-    }
-    .card h2 { margin: 0 0 12px; font-size: 17px; }
-    .row { display: grid; grid-template-columns: 120px 1fr auto auto; gap: 10px; align-items: center; margin: 9px 0; }
-    .row.plain { grid-template-columns: 160px 1fr; }
-    label { color: #334155; }
-    input[type="text"], input[type="number"], select {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 14px;
-      background: #fff;
-      color: var(--text);
-    }
-    input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
-    button {
-      border: 0;
-      border-radius: 8px;
-      padding: 9px 14px;
-      background: var(--accent);
-      color: white;
-      font-size: 14px;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    button:hover { background: var(--accent-hover); }
-    button.secondary { background: #eef2ff; color: #1e3a8a; }
-    button.danger { background: #fee2e2; color: #991b1b; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .button-group { display: flex; gap: 8px; align-items: center; }
-    .status { font-weight: 600; }
-    .progress-wrap {
-      background: #e5e7eb;
-      border-radius: 999px;
-      height: 12px;
-      overflow: hidden;
-      margin: 10px 0;
-    }
-    .progress-inner {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, #2563eb, #38bdf8);
-      transition: width 0.25s ease;
-    }
-    .log {
-      background: #0f172a;
-      color: #e2e8f0;
-      border-radius: 10px;
-      padding: 12px;
-      height: 260px;
-      overflow: auto;
-      font: 13px/1.6 Consolas, "Microsoft YaHei", monospace;
-      white-space: pre-wrap;
-    }
-    .hint { color: var(--muted); font-size: 12px; margin-top: 3px; }
-    .hidden { display: none; }
-  </style>
+  <link rel="stylesheet" href="/style.css?v=20260912">
 </head>
 <body>
-  <main class="page">
-    <h1>信息流素材一键拼接</h1>
-    <p class="subtitle">选择开头、结尾文件夹，一键批量生成不同组合的 MP4 视频。</p>
+  <div id="app" v-cloak>
+    <div class="app">
 
-    <section class="card">
-      <h2>素材设置</h2>
-      <div class="row">
-        <label>开头文件夹</label>
-        <input id="head_folder" type="text" placeholder="例如：D:\素材\开头">
-        <span id="head_count" class="hint"></span>
-        <div class="button-group">
-          <button class="select-btn" onclick="selectFolder('head')">选择</button>
-          <button class="secondary" onclick="uploadFolder('head')">上传</button>
+      <!-- ============ 侧栏 ============ -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-logo">拼</div>
+          <div>
+            <div class="brand-title">信息流素材拼接</div>
+            <div class="brand-sub">批量成片工作台</div>
+          </div>
         </div>
-      </div>
-      <div class="row">
-        <label>结尾文件夹</label>
-        <input id="tail_folder" type="text" placeholder="例如：D:\素材\结尾">
-        <span id="tail_count" class="hint"></span>
-        <div class="button-group">
-          <button class="select-btn" onclick="selectFolder('tail')">选择</button>
-          <button class="secondary" onclick="uploadFolder('tail')">上传</button>
+
+        <nav class="steps">
+          <div class="step-item" :class="{active: step===1, done: step>1}" @click="step=1">
+            <span class="step-num" v-if="step!==1 && step>1">✓</span>
+            <span class="step-num" v-else>1</span>
+            <span>素材库</span>
+          </div>
+          <div class="step-item" :class="{active: step===2, done: step>2}" @click="step=2">
+            <span class="step-num" v-if="step>2">✓</span>
+            <span class="step-num" v-else>2</span>
+            <span>参数配置</span>
+          </div>
+          <div class="step-item" :class="{active: step===3}" @click="step=3">
+            <span class="step-num">3</span>
+            <span>生成与结果</span>
+          </div>
+        </nav>
+
+        <div class="sidebar-foot">
+          <div class="health-badge">
+            <span class="health-dot" :class="{off: !serverOk}"></span>
+            {{ serverOk ? '服务已连接' : '服务连接失败' }}
+          </div>
+          <button class="theme-toggle" @click="toggleTheme">
+            <span>{{ theme === 'dark' ? '🌙' : '☀️' }}</span>
+            <span>{{ theme === 'dark' ? '深色模式' : '浅色模式' }}</span>
+          </button>
         </div>
-      </div>
-      <div class="row">
-        <label>中间文件夹</label>
-        <input id="middle_folder" type="text" placeholder="可选：D:\素材\中间">
-        <span id="middle_count" class="hint"></span>
-        <div class="button-group">
-          <button class="select-btn" onclick="selectFolder('middle')">选择</button>
-          <button class="secondary" onclick="uploadFolder('middle')">上传</button>
+      </aside>
+
+      <!-- ============ 主内容 ============ -->
+      <main class="main">
+        <div class="content">
+
+          <div class="topbar">
+            <div>
+              <div class="page-title">{{ pageTitle }}</div>
+              <div class="page-desc">{{ pageDesc }}</div>
+            </div>
+            <div class="btn-row">
+              <button v-if="step>1" class="btn plain" @click="step--">← 上一步</button>
+              <button v-if="step<3" class="btn" @click="step++">下一步 →</button>
+            </div>
+          </div>
+
+          <div v-if="msg.text" class="msg" :class="msg.type">{{ msg.text }}</div>
+
+          <!-- ================= 步骤 1：素材 ================= -->
+          <section v-show="step===1">
+            <div class="card" v-for="zone in materialZones" :key="zone.kind">
+              <div class="card-title">
+                <span class="bar"></span>{{ zone.title }}
+                <span class="card-hint" style="font-weight:400">{{ zone.hint }}</span>
+              </div>
+
+              <div class="folder-row">
+                <input class="input input-path" :id="'input_' + zone.kind" :placeholder="zone.placeholder"
+                       v-model="folders[zone.kind]" @change="scan(zone.kind)">
+                <span class="folder-count" v-if="materials[zone.kind].length">
+                  {{ materials[zone.kind].length }} 个
+                </span>
+                <button class="btn plain" @click="selectFolder(zone.kind)" :disabled="selectBusy">选择</button>
+                <button v-if="zone.uploadable" class="btn soft" @click="onPickFolderUpload(zone.kind)">上传</button>
+              </div>
+
+              <div v-if="zone.kind==='bgm'" class="card-hint" style="margin-top:6px">
+                音乐文件（MP3/WAV/M4A/FLAC/OGG），固定或随机配乐
+              </div>
+
+              <div class="material-grid" v-if="materials[zone.kind].length">
+                <div class="material-card"
+                     v-for="m in materials[zone.kind]" :key="m.path"
+                     :class="{picked: fixed[zone.kind]===m.path, broken: !m.ok}"
+                     @click="toggleFixed(zone.kind, m.path)">
+                  <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
+                       :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl = ''">
+                  <div v-else class="empty-thumb">🎬</div>
+                  <div v-if="!m.ok" class="broken-badge">损坏</div>
+                  <div class="pick-badge">固定</div>
+                  <div class="meta">
+                    <div class="name" :title="m.name">{{ m.name }}</div>
+                    <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
+                  </div>
+                </div>
+              </div>
+              <div v-else-if="folders[zone.kind]" class="empty" style="margin-top:12px">
+                该文件夹未识别到{{ zone.kind==='bgm' ? '音频' : '视频' }}文件
+              </div>
+              <div v-else class="empty" style="margin-top:12px">
+                选择或上传{{ zone.kind==='bgm' ? '音乐' : '素材' }}文件夹
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>输出目录</div>
+              <div class="folder-row">
+                <input class="input input-path" id="input_output" placeholder="成片保存位置（必填）"
+                       v-model="folders.output">
+                <button class="btn plain" @click="selectFolder('output')" :disabled="selectBusy">选择</button>
+              </div>
+              <div class="card-hint" style="margin-top:8px">
+                生成前可随时修改；点击素材卡片可设为固定开头/结尾/中间
+              </div>
+            </div>
+          </section>
+
+          <!-- ================= 步骤 2：参数 ================= -->
+          <section v-show="step===2">
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>输出设置</div>
+              <div class="grid-2">
+                <div class="field">
+                  <div class="field-label">出片数量</div>
+                  <div class="range-wrap">
+                    <input type="range" min="1" max="200" v-model.number="params.count">
+                    <span class="range-val">{{ params.count }} 条</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-label">并发任务数</div>
+                  <div class="range-wrap">
+                    <input type="range" min="1" max="8" v-model.number="params.workers">
+                    <span class="range-val">{{ params.workers }} 路</span>
+                  </div>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <div class="field-label">分辨率</div>
+                  <div class="seg">
+                    <button :class="{on: params.resolution==='1080x1920'}" @click="params.resolution='1080x1920'">1080×1920 竖屏</button>
+                    <button :class="{on: params.resolution==='1920x1080'}" @click="params.resolution='1920x1080'">1920×1080 横屏</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-label">目标时长</div>
+                  <div class="seg">
+                    <button :class="{on: params.duration_mode==='不限制'}" @click="params.duration_mode='不限制'">不限制</button>
+                    <button :class="{on: params.duration_mode==='15s'}" @click="params.duration_mode='15s'">15s</button>
+                    <button :class="{on: params.duration_mode==='25s'}" @click="params.duration_mode='25s'">25s</button>
+                    <button :class="{on: params.duration_mode==='30s'}" @click="params.duration_mode='30s'">30s</button>
+                  </div>
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <div class="field-label">平台预设</div>
+                  <div class="folder-row">
+                    <select class="select" v-model="presetName">
+                      <option value="">自定义</option>
+                      <option v-for="(_, name) in presets" :key="name" :value="name">{{ name }}</option>
+                    </select>
+                    <button class="btn soft" @click="applyPreset">应用</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-label">文件名模板</div>
+                  <input class="input input-path" v-model="params.output_name_template"
+                         placeholder="output_{序号}_{开头}_{结尾}">
+                  <div class="card-hint" style="margin-top:4px">
+                    变量：{序号} {开头} {结尾} {中间} {日期}
+                  </div>
+                </div>
+              </div>
+              <div class="field" style="margin-bottom:0">
+                <label class="switch">
+                  <input type="checkbox" v-model="params.dedupe_enabled">
+                  <span class="track"></span>
+                  <span class="switch-label">智能去重</span>
+                </label>
+                <span class="card-hint" style="margin-left:10px">尽量降低重复组合；随机种子：</span>
+                <input class="input" style="width:120px;display:inline-block;margin-left:6px" type="number" v-model.number="params.random_seed">
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>转场</div>
+              <div class="field">
+                <div class="field-label">转场模式</div>
+                <div class="seg">
+                  <button :class="{on: params.transition_mode==='不使用'}" @click="params.transition_mode='不使用'">不使用</button>
+                  <button :class="{on: params.transition_mode==='固定'}" @click="params.transition_mode='固定'">固定转场</button>
+                  <button :class="{on: params.transition_mode==='随机'}" @click="params.transition_mode='随机'">随机转场</button>
+                </div>
+              </div>
+              <div v-if="params.transition_mode==='固定'" class="grid-3">
+                <div class="field">
+                  <div class="field-label">转场类型</div>
+                  <select class="select" v-model="params.transition_type">
+                    <option v-for="t in transitionOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <div class="field-label">转场时长（秒）</div>
+                  <input class="input" type="number" min="0.1" max="2" step="0.1" v-model.number="params.transition_duration">
+                </div>
+              </div>
+              <div v-if="params.transition_mode==='随机'">
+                <div class="field-label" style="margin-bottom:8px">随机转场池（点击选择）</div>
+                <div class="chips">
+                  <span class="chip" v-for="t in transitionOptions" :key="t.value"
+                        :class="{on: params.transition_types.includes(t.value)}"
+                        @click="toggleChip(t.value)">{{ t.label }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>背景音乐</div>
+              <div class="field">
+                <div class="field-label">BGM 模式</div>
+                <div class="seg">
+                  <button :class="{on: params.bgm_mode==='不使用'}" @click="params.bgm_mode='不使用'">不使用</button>
+                  <button :class="{on: params.bgm_mode==='音乐文件夹随机'}" @click="params.bgm_mode='音乐文件夹随机'">随机 BGM</button>
+                  <button :class="{on: params.bgm_mode==='音乐文件夹固定'}" @click="params.bgm_mode='音乐文件夹固定'">固定 BGM</button>
+                </div>
+              </div>
+              <div v-if="params.bgm_mode!=='不使用'">
+                <div class="field">
+                  <div class="field-label">音乐文件夹</div>
+                  <div class="folder-row">
+                    <input class="input input-path" v-model="folders.bgm" @change="scan('bgm')">
+                    <button class="btn plain" @click="selectFolder('bgm')" :disabled="selectBusy">选择</button>
+                  </div>
+                </div>
+                <div class="field" v-if="params.bgm_mode==='音乐文件夹固定'">
+                  <div class="field-label">固定 BGM</div>
+                  <select class="select" v-model="params.fixed_bgm">
+                    <option value="">请选择固定 BGM</option>
+                    <option v-for="m in materials.bgm" :key="m.path" :value="m.path">{{ m.name }}</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <div class="field-label">BGM 音量</div>
+                  <div class="range-wrap">
+                    <input type="range" min="0" max="1" step="0.05" v-model.number="params.bgm_volume">
+                    <span class="range-val">{{ Math.round(params.bgm_volume*100) }}%</span>
+                  </div>
+                </div>
+                <div class="btn-row">
+                  <label class="switch">
+                    <input type="checkbox" v-model="params.bgm_fade"><span class="track"></span>
+                    <span class="switch-label">淡入淡出</span>
+                  </label>
+                  <label class="switch">
+                    <input type="checkbox" v-model="params.bgm_ducking"><span class="track"></span>
+                    <span class="switch-label">人声自动闪避</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>水印与音频</div>
+              <div class="field">
+                <label class="switch">
+                  <input type="checkbox" v-model="params.use_watermark"><span class="track"></span>
+                  <span class="switch-label">添加水印</span>
+                </label>
+              </div>
+              <div v-if="params.use_watermark">
+                <div class="grid-2">
+                  <div class="field">
+                    <div class="field-label">水印图片</div>
+                    <div class="folder-row">
+                      <input class="input input-path" v-model="params.watermark_path" placeholder="PNG / JPG 路径">
+                      <label class="btn soft" style="cursor:pointer">
+                        选择文件
+                        <input type="file" accept="image/png,image/jpeg,image/webp" hidden @change="pickWatermark">
+                      </label>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <div class="field-label">水印模式</div>
+                    <div class="seg">
+                      <button :class="{on: params.watermark_mode==='铺满全屏'}" @click="params.watermark_mode='铺满全屏'">铺满全屏</button>
+                      <button :class="{on: params.watermark_mode==='角落水印'}" @click="params.watermark_mode='角落水印'">角落水印</button>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="params.watermark_mode==='角落水印'" class="grid-3">
+                  <div class="field">
+                    <div class="field-label">位置</div>
+                    <select class="select" v-model="params.watermark_position">
+                      <option>右下角</option><option>右上角</option><option>左下角</option><option>左上角</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <div class="field-label">大小（相对宽度）</div>
+                    <div class="range-wrap">
+                      <input type="range" min="5" max="60" v-model.number="watermarkScalePct">
+                      <span class="range-val">{{ watermarkScalePct }}%</span>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <div class="field-label">透明度</div>
+                    <div class="range-wrap">
+                      <input type="range" min="5" max="100" v-model.number="watermarkOpacityPct">
+                      <span class="range-val">{{ watermarkOpacityPct }}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="btn-row" style="margin-top:6px">
+                <label class="switch">
+                  <input type="checkbox" v-model="params.normalize_audio"><span class="track"></span>
+                  <span class="switch-label">统一音量（响度归一）</span>
+                </label>
+                <label class="switch">
+                  <input type="checkbox" v-model="params.use_subtitle"><span class="track"></span>
+                  <span class="switch-label">自动字幕</span>
+                </label>
+                <span class="card-hint">字幕需要 faster-whisper</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>模板与配置</div>
+              <div class="template-bar">
+                <input class="input" style="flex:1;min-width:160px" v-model="templateName" placeholder="模板名称，如：抖音带货竖屏">
+                <button class="btn soft" @click="saveTemplate">保存模板</button>
+                <button class="btn plain" @click="loadTemplateByName">载入模板</button>
+                <button class="btn danger" @click="deleteTemplate">删除模板</button>
+                <select class="select" style="min-width:140px" v-model="selectedTemplate" @change="loadTemplateByName">
+                  <option value="">已存模板…</option>
+                  <option v-for="t in templates" :key="t" :value="t">{{ t }}</option>
+                </select>
+                <button class="btn plain" @click="saveConfig">保存当前配置</button>
+                <button class="btn plain" @click="loadConfig">载入上次配置</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ================= 步骤 3：生成 ================= -->
+          <section v-show="step===3">
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>任务控制</div>
+              <div v-if="precheckBad.length" class="msg warn">
+                预检发现 {{ precheckBad.length }} 个问题素材：{{ precheckBad.map(b=>b.name).join('、') }}，请处理后再批量生成
+              </div>
+              <div class="btn-row">
+                <button class="btn soft" @click="precheck" :disabled="job.running">预检素材</button>
+                <button class="btn big success" @click="startJob" :disabled="job.running">{{ job.running ? '生成中…' : '开始生成' }}</button>
+                <button class="btn plain" @click="previewJob" :disabled="job.running">生成预览（1条）</button>
+                <button class="btn plain" @click="togglePause" :disabled="!job.running">{{ job.paused ? '继续' : '暂停' }}</button>
+                <button class="btn danger" @click="cancelJob" :disabled="!job.running">取消</button>
+                <button class="btn plain" @click="retryFailed" :disabled="job.running || !job.failed">重试失败项 ({{ job.failed }})</button>
+              </div>
+
+              <div class="progress-wrap">
+                <div class="progress-inner" :style="{width: progressPct+'%'}"></div>
+              </div>
+              <div class="job-stats" v-if="job.running || job.done">
+                <span>进度 <b>{{ job.current }}/{{ job.total }}</b>（{{ progressPct }}%）</span>
+                <span v-if="job.speed!=null">速度 <b>{{ job.speed.toFixed(1) }}</b> 条/分</span>
+                <span v-if="job.eta!=null">预计剩余 <b>{{ fmtEta(job.eta) }}</b></span>
+                <template v-if="job.done">
+                  <span>成功 <b style="color:var(--success)">{{ job.success }}</b></span>
+                  <span>跳过 <b>{{ job.skipped }}</b></span>
+                  <span>失败 <b style="color:var(--danger)">{{ job.failed }}</b></span>
+                </template>
+              </div>
+
+              <div v-if="previewUrl" class="video-box">
+                <video :src="previewUrl" controls></video>
+              </div>
+
+              <div class="table-wrap" v-if="resultRows.length">
+                <table class="tbl">
+                  <thead>
+                    <tr><th>#</th><th>开头</th><th>中间</th><th>结尾</th><th>状态</th><th>操作</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in resultRows" :key="row.index">
+                      <td>{{ row.index }}</td>
+                      <td class="name-cell" :title="row.head">{{ fileName(row.head) }}</td>
+                      <td class="name-cell" :title="row.middle || ''" style="color:var(--text-3)">{{ row.middle ? fileName(row.middle) : '—' }}</td>
+                      <td class="name-cell" :title="row.tail">{{ fileName(row.tail) }}</td>
+                      <td><span class="badge" :class="row.ok ? 'ok' : 'fail'">{{ row.ok ? '成功' : '失败' }}</span></td>
+                      <td>
+                        <a v-if="row.ok" class="btn soft" :href="row.downloadUrl" style="text-decoration:none">下载</a>
+                        <span v-else class="card-hint" :title="row.error">{{ shortError(row.error) }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="btn-row" style="margin-top:12px" v-if="outputFiles.length">
+                <button class="btn" @click="downloadZip">打包下载全部（ZIP）</button>
+                <span class="card-hint">{{ outputFiles.length }} 个成片</span>
+              </div>
+
+              <div class="log" v-html="logHtml"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>任务历史
+                <button class="btn plain" style="margin-left:auto" @click="loadHistory">刷新</button>
+                <button class="btn danger" @click="clearHistory">清空</button>
+              </div>
+              <div v-if="history.length">
+                <div class="history-item" v-for="h in history" :key="h._file" @click="loadFromHistory(h)">
+                  <div>
+                    <div class="history-desc">{{ h._file }} · {{ h.type }}</div>
+                    <div class="history-meta">{{ h.config.head_folder }} → {{ h.config.output_folder }}</div>
+                  </div>
+                  <div class="history-meta">成功 {{ h.success }} / 失败 {{ h.failed }}<template v-if="h.skipped"> / 跳过 {{ h.skipped }}</template></div>
+                </div>
+              </div>
+              <div v-else class="empty">暂无历史记录</div>
+            </div>
+          </section>
+
         </div>
-      </div>
-      <div class="row plain">
-        <label>固定开头</label>
-        <select id="fixed_head"><option value="">不固定</option></select>
-      </div>
-      <div class="row plain">
-        <label>固定结尾</label>
-        <select id="fixed_tail"><option value="">不固定</option></select>
-      </div>
-      <div class="row plain">
-        <label>固定中间</label>
-        <select id="fixed_middle"><option value="">不固定</option></select>
-      </div>
-    </section>
+      </main>
 
-    <section class="card">
-      <h2>输出设置</h2>
-      <div class="row">
-        <label>输出目录</label>
-        <input id="output_folder" type="text" placeholder="请选择输出路径（必填）">
-        <button class="select-btn" onclick="selectFolder('output')">选择</button>
-      </div>
-      <div class="row plain">
-        <label>出片数量</label>
-        <input id="count" type="number" min="1" max="200" value="10">
-      </div>
-      <div class="row plain">
-        <label>文件名模板</label>
-        <input id="output_name_template" type="text" value="output_{序号}_{开头}_{结尾}">
-      </div>
-      <div class="row plain">
-        <label><input id="dedupe_enabled" type="checkbox" checked> 智能去重</label>
-        <span class="hint">尽量降低重复组合</span>
-      </div>
-      <div class="row plain">
-        <label>随机种子</label>
-        <input id="random_seed" type="number" value="20260905">
-      </div>
-      <div class="row plain">
-        <label>平台预设</label>
-        <select id="platform_preset">
-          <option value="">自定义</option>
-          <option>抖音竖屏</option>
-          <option>快手竖屏</option>
-          <option>小红书竖屏</option>
-          <option>B站横屏</option>
-          <option>信息流15秒</option>
-          <option>信息流25秒</option>
-          <option>信息流30秒</option>
-        </select>
-        <button class="secondary" onclick="applyPlatformPreset()">应用</button>
-      </div>
-      <div class="row plain">
-        <label>分辨率</label>
-        <select id="resolution">
-          <option value="1080x1920">1080 × 1920（竖屏）</option>
-          <option value="1920x1080">1920 × 1080（横屏）</option>
-        </select>
-      </div>
-      <div class="row plain">
-        <label>目标时长</label>
-        <select id="duration_mode">
-          <option value="不限制">不限制</option>
-          <option value="15s">15 秒</option>
-          <option value="25s">25 秒</option>
-          <option value="30s">30 秒</option>
-        </select>
-      </div>
-      <div class="actions">
-        <button class="secondary" onclick="saveConfig()">保存配置</button>
-        <button class="secondary" onclick="loadConfig()">载入配置</button>
-      </div>
-    </section>
+      <!-- 隐藏的文件选择 -->
+      <input ref="dirPicker" type="file" webkitdirectory hidden>
+    </div>
+  </div>
 
-    <section class="card">
-      <h2>效果选项</h2>
-      <div class="row">
-        <label><input id="use_watermark" type="checkbox"> 添加水印</label>
-        <input id="watermark_path" type="text" placeholder="例如：D:\水印\logo.png">
-        <label for="watermark_upload" class="secondary" style="padding:9px 14px;border-radius:8px;cursor:pointer;background:#eef2ff;color:#1e3a8a;">选择PNG</label>
-      </div>
-      <div class="row plain">
-        <label>转场模式</label>
-        <select id="transition_mode">
-          <option value="不使用">不使用</option>
-          <option value="固定">固定转场</option>
-          <option value="随机">随机转场</option>
-        </select>
-      </div>
-      <div class="row plain">
-        <label>固定转场类型</label>
-        <select id="transition_type">
-          <option value="fade">淡入淡出</option>
-          <option value="dissolve">溶解</option>
-          <option value="slideleft">左滑</option>
-          <option value="slideright">右滑</option>
-          <option value="slideup">上滑</option>
-          <option value="slidedown">下滑</option>
-          <option value="circleopen">圆形打开</option>
-          <option value="circleclose">圆形关闭</option>
-          <option value="wipeleft">左擦除</option>
-          <option value="wiperight">右擦除</option>
-        </select>
-      </div>
-      <div class="row plain">
-        <label>转场时长</label>
-        <input id="transition_duration" type="number" min="0.1" max="2" step="0.1" value="0.5">
-        <span class="hint">秒</span>
-      </div>
-      <div class="row plain">
-        <label>随机转场类型</label>
-        <span class="hint">
-          <label><input type="checkbox" class="trans_pool" value="fade" checked>淡入淡出</label>
-          <label><input type="checkbox" class="trans_pool" value="dissolve" checked>溶解</label>
-          <label><input type="checkbox" class="trans_pool" value="slideleft" checked>左滑</label>
-          <label><input type="checkbox" class="trans_pool" value="slideright" checked>右滑</label>
-          <label><input type="checkbox" class="trans_pool" value="slideup" checked>上滑</label>
-          <label><input type="checkbox" class="trans_pool" value="slidedown" checked>下滑</label>
-          <label><input type="checkbox" class="trans_pool" value="circleopen" checked>圆形打开</label>
-          <label><input type="checkbox" class="trans_pool" value="circleclose" checked>圆形关闭</label>
-          <label><input type="checkbox" class="trans_pool" value="wipeleft" checked>左擦除</label>
-          <label><input type="checkbox" class="trans_pool" value="wiperight" checked>右擦除</label>
-        </span>
-      </div>
-      <div class="row plain">
-        <label><input id="use_subtitle" type="checkbox"> 自动字幕</label>
-        <span class="hint">需要安装 faster-whisper</span>
-      </div>
-      <div class="row plain">
-        <label>BGM</label>
-        <select id="bgm_mode">
-          <option value="不使用">不使用</option>
-          <option value="音乐文件夹随机">随机 BGM</option>
-          <option value="音乐文件夹固定">固定 BGM</option>
-        </select>
-      </div>
-      <div class="row">
-        <label>音乐文件夹</label>
-        <input id="bgm_folder" type="text" placeholder="选择音乐文件夹">
-        <span id="bgm_count" class="hint"></span>
-        <div class="button-group">
-          <button class="select-btn" onclick="selectFolder('bgm')">选择</button>
-        </div>
-      </div>
-      <div class="row plain">
-        <label>固定 BGM</label>
-        <select id="fixed_bgm"><option value="">请选择固定 BGM</option></select>
-      </div>
-      <div class="row plain">
-        <label>BGM 音量</label>
-        <input id="bgm_volume" type="number" min="0" max="1" step="0.05" value="0.2">
-      </div>
-      <div class="row plain">
-        <label><input id="normalize_audio" type="checkbox"> 统一音量</label>
-        <span class="hint">让不同素材的响度尽量接近</span>
-      </div>
-      <div class="row plain">
-        <label><input id="bgm_fade" type="checkbox"> BGM 淡入淡出</label>
-        <span class="hint">背景音乐首尾平滑过渡</span>
-      </div>
-      <div class="row plain">
-        <label><input id="bgm_ducking" type="checkbox"> BGM 自动闪避</label>
-        <span class="hint">有人声时自动降低背景音乐</span>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>模板管理</h2>
-      <div class="row plain">
-        <label>模板名称</label>
-        <input id="template_name" type="text" placeholder="例如：抖音带货竖屏">
-      </div>
-      <div class="actions">
-        <button class="secondary" onclick="saveTemplate()">保存为模板</button>
-        <button class="secondary" onclick="loadTemplate()">载入模板</button>
-        <button class="danger" onclick="deleteTemplate()">删除模板</button>
-      </div>
-      <div id="template_list" class="hint" style="margin-top: 8px;"></div>
-    </section>
-
-    <section class="card">
-      <h2>任务历史</h2>
-      <button class="secondary" onclick="loadHistory()">刷新历史</button>
-      <button class="danger" onclick="clearHistory()">清空历史记录</button>
-      <div id="history_list" class="hint" style="margin-top: 8px;"></div>
-    </section>
-
-    <section class="card">
-      <div class="actions">
-        <button id="start_btn" onclick="startJob()">开始生成</button><button class="secondary" onclick="previewJob()">生成预览</button>
-        <button id="pause_btn" class="secondary" onclick="togglePause()" disabled>暂停</button>
-        <button id="cancel_btn" class="danger" onclick="cancelJob()" disabled>取消</button><button id="retry_btn" class="secondary" onclick="retryFailed()" disabled>重试失败项</button>
-        <span id="status" class="status">就绪</span><div id="message_box" class="hint" style="min-height:18px;"></div>
-      </div>
-      <div class="progress-wrap"><div id="progress" class="progress-inner"></div></div>
-      <div class="log" id="log"></div>
-      <div id="preview_box" class="card" style="margin-top: 10px; padding: 12px;"></div>
-      <div id="output_files" class="card" style="margin-top: 10px; padding: 12px;"></div>
-    </section>
-  </main>
-
-  <input id="head_upload" type="file" webkitdirectory hidden>
-  <input id="tail_upload" type="file" webkitdirectory hidden>
-  <input id="middle_upload" type="file" webkitdirectory hidden>
-  <input id="watermark_upload" type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="watermarkSelected(this)">
-
-  <script>
-    const $ = (id) => document.getElementById(id);
-    let paused = false;
-
-    function showMessage(message, type = 'info') {
-      const box = $('message_box');
-      if (!box) return;
-      box.textContent = message;
-      box.style.color = type === 'error' ? '#b91c1c' : '#2563eb';
-      clearTimeout(window.__msgTimer);
-      window.__msgTimer = setTimeout(() => { box.textContent = ''; }, 6000);
-    }
-    let lastOutputFolder = '';
-    let outputLoaded = false;
-
-    async function api(path, options = {}) {
-      const resp = await fetch(path, options);
-      return resp.json();
-    }
-
-    let selectBusy = false;
-
-    async function selectFolder(name) {
-      if (selectBusy) {
-        showMessage('文件夹选择窗口已打开，请先关闭');
-        return;
-      }
-      selectBusy = true;
-      document.querySelectorAll('.select-btn').forEach((btn) => { btn.disabled = true; });
-      try {
-        const data = await api('/api/select_folder?name=' + encodeURIComponent(name));
-        if (data.busy) {
-          showMessage('文件夹选择窗口已打开，请先关闭');
-          return;
-        }
-        if (!data.path) return;
-      if (name === 'head') $('head_folder').value = data.path;
-      if (name === 'tail') $('tail_folder').value = data.path;
-      if (name === 'middle') $('middle_folder').value = data.path;
-      if (name === 'bgm') {
-        $('bgm_folder').value = data.path;
-        scanMaterials();
-      }
-      if (name === 'output') {
-        $('output_folder').value = data.path;
-        showMessage('输出路径已选择');
-      }
-      if (name === 'head' || name === 'tail' || name === 'middle') scanMaterials();
-      } finally {
-        selectBusy = false;
-        document.querySelectorAll('.select-btn').forEach((btn) => { btn.disabled = false; });
-      }
-    }
-
-    function uploadFolder(kind) {
-      const input = $(kind + '_upload');
-      input.value = '';
-      input.onchange = async () => {
-        const files = Array.from(input.files || []);
-        if (!files.length) return;
-        await uploadFiles(kind, files);
-        const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
-        if (data.path) {
-          if (kind === 'head') $('head_folder').value = data.path;
-          if (kind === 'tail') $('tail_folder').value = data.path;
-          if (kind === 'middle') $('middle_folder').value = data.path;
-          const out = data.path.replace(/(head|tail|middle)$/, 'output');
-          $('output_folder').value = out;
-          scanMaterials();
-        }
-      };
-      input.click();
-    }
-
-    async function watermarkSelected(input) {
-      const file = input.files && input.files[0];
-      if (!file) return;
-      await uploadFiles('watermark', [file]);
-      const data = await api('/api/upload_path?kind=watermark');
-      if (data.path) {
-        const full = data.path + '\\' + file.name;
-        $('watermark_path').value = full;
-        showMessage('水印已选择：' + file.name);
-      }
-    }
-
-    function uploadSingle(kind) {
-      const input = $(kind + '_upload');
-      input.value = '';
-      input.onchange = async () => {
-        const file = input.files && input.files[0];
-        if (!file) return;
-        await uploadFiles(kind, [file]);
-        const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
-        if (data.path) {
-          const full = data.path + '\\' + file.name;
-          if (kind === 'watermark') {
-            $('watermark_path').value = full;
-            showMessage('水印已选择：' + file.name);
-          }
-        }
-      };
-      input.click();
-    }
-
-    async function uploadFiles(kind, files) {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        $('status').textContent = `正在上传 ${i + 1}/${files.length}: ${file.name}`;
-        const buffer = await file.arrayBuffer();
-        await fetch('/api/upload?kind=' + encodeURIComponent(kind) + '&name=' + encodeURIComponent(file.name), {
-          method: 'POST',
-          body: buffer,
-        });
-      }
-      $('status').textContent = '上传完成';
-    }
-
-    async function scanMaterials() {
-      const head = $('head_folder').value.trim();
-      const tail = $('tail_folder').value.trim();
-      const middle = $('middle_folder').value.trim();
-      const bgm = $('bgm_folder').value.trim();
-      try {
-        const data = await api('/api/scan?head=' + encodeURIComponent(head) + '&tail=' + encodeURIComponent(tail) + '&middle=' + encodeURIComponent(middle) + '&bgm=' + encodeURIComponent(bgm));
-        fillSelect('fixed_head', data.head || []);
-        fillSelect('fixed_tail', data.tail || []);
-        fillSelect('fixed_middle', data.middle || []);
-        fillSelect('fixed_bgm', data.bgm || []);
-        $('head_count').textContent = (data.head || []).length ? (data.head || []).length + ' 个' : '';
-        $('tail_count').textContent = (data.tail || []).length ? (data.tail || []).length + ' 个' : '';
-        $('middle_count').textContent = (data.middle || []).length ? (data.middle || []).length + ' 个' : '';
-        $('bgm_count').textContent = (data.bgm || []).length ? (data.bgm || []).length + ' 个' : '';
-      } catch (e) {
-        showMessage('素材扫描失败：' + e.message, 'error');
-      }
-    }
-
-    function fillSelect(id, items) {
-      const select = $(id);
-      const current = select.value;
-      select.innerHTML = '<option value="">不固定</option>';
-      items.forEach((item) => {
-        const option = document.createElement('option');
-        option.value = item.path;
-        option.textContent = item.name;
-        select.appendChild(option);
-      });
-      if (current) select.value = current;
-    }
-
-    function collectTransitionPool() {
-      return Array.from(document.querySelectorAll('.trans_pool:checked')).map((el) => el.value);
-    }
-
-    function collectConfig() {
-      return {
-        head_folder: $('head_folder').value.trim(),
-        tail_folder: $('tail_folder').value.trim(),
-        middle_folder: $('middle_folder').value.trim(),
-        output_folder: $('output_folder').value.trim(),
-        fixed_head: $('fixed_head').value,
-        fixed_tail: $('fixed_tail').value,
-        fixed_middle: $('fixed_middle').value,
-        count: $('count').value,
-        output_name_template: $('output_name_template').value,
-        dedupe_enabled: $('dedupe_enabled').checked,
-        random_seed: $('random_seed').value,
-        resolution: $('resolution').value,
-        duration_mode: $('duration_mode').value,
-        use_watermark: $('use_watermark').checked,
-        watermark_path: $('watermark_path').value.trim(),
-        use_transition: $('transition_mode').value !== '不使用',
-        transition_mode: $('transition_mode').value,
-        transition_type: $('transition_type').value,
-        transition_duration: $('transition_duration').value,
-        transition_types: collectTransitionPool(),
-        use_subtitle: $('use_subtitle').checked,
-        bgm_mode: $('bgm_mode').value,
-        bgm_folder: $('bgm_folder').value.trim(),
-        fixed_bgm: $('fixed_bgm').value,
-        bgm_volume: $('bgm_volume').value,
-        normalize_audio: $('normalize_audio').checked,
-        bgm_fade: $('bgm_fade').checked,
-        bgm_ducking: $('bgm_ducking').checked,
-      };
-    }
-
-    function applyConfig(cfg) {
-      if (!cfg) return;
-      $('head_folder').value = cfg.head_folder || '';
-      $('tail_folder').value = cfg.tail_folder || '';
-      $('middle_folder').value = cfg.middle_folder || '';
-      $('output_folder').value = cfg.output_folder || '';
-      $('fixed_head').value = cfg.fixed_head || '';
-      $('fixed_tail').value = cfg.fixed_tail || '';
-      $('fixed_middle').value = cfg.fixed_middle || '';
-      $('count').value = cfg.count || 10;
-      $('output_name_template').value = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
-      $('dedupe_enabled').checked = cfg.dedupe_enabled !== false;
-      $('random_seed').value = cfg.random_seed || 20260905;
-      $('resolution').value = cfg.resolution || '1080x1920';
-      $('duration_mode').value = cfg.duration_mode || '不限制';
-      $('use_watermark').checked = !!cfg.use_watermark;
-      $('watermark_path').value = cfg.watermark_path || '';
-      $('transition_mode').value = cfg.transition_mode || '不使用';
-      $('transition_type').value = cfg.transition_type || 'fade';
-      $('transition_duration').value = cfg.transition_duration || 0.5;
-      const pool = cfg.transition_types || [];
-      document.querySelectorAll('.trans_pool').forEach((el) => { el.checked = !pool.length || pool.includes(el.value); });
-      $('use_subtitle').checked = !!cfg.use_subtitle;
-      $('bgm_mode').value = cfg.bgm_mode || '不使用';
-      $('bgm_folder').value = cfg.bgm_folder || '';
-      $('fixed_bgm').value = cfg.fixed_bgm || '';
-      $('bgm_volume').value = cfg.bgm_volume || 0.2;
-      $('normalize_audio').checked = !!cfg.normalize_audio;
-      $('bgm_fade').checked = !!cfg.bgm_fade;
-      $('bgm_ducking').checked = !!cfg.bgm_ducking;
-      scanMaterials();
-    }
-
-    async function saveConfig() {
-      const data = await api('/api/config/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(collectConfig()),
-      });
-      showMessage(data.ok ? '配置已保存' : (data.error || '保存失败'));
-    }
-
-    async function loadConfig() {
-      const cfg = await api('/api/config/load');
-      if (!cfg || !Object.keys(cfg).length) {
-        showMessage('还没有保存过配置');
-        return;
-      }
-      applyConfig(cfg);
-    }
-
-    async function previewJob() {
-      const payload = collectConfig();
-      const data = await api('/api/preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!data.ok) showMessage(data.error || '预览失败');
-      else {
-        $('log').textContent = '';
-        $('preview_box').innerHTML = '';
-        $('status').textContent = '预览生成中';
-        updateButtons();
-      }
-    }
-
-    async function startJob() {
-      const payload = {
-        head_folder: $('head_folder').value.trim(),
-        tail_folder: $('tail_folder').value.trim(),
-        middle_folder: $('middle_folder').value.trim(),
-        output_folder: $('output_folder').value.trim(),
-        fixed_head: $('fixed_head').value,
-        fixed_tail: $('fixed_tail').value,
-        fixed_middle: $('fixed_middle').value,
-        count: $('count').value,
-        output_name_template: $('output_name_template').value,
-        dedupe_enabled: $('dedupe_enabled').checked,
-        random_seed: $('random_seed').value,
-        resolution: $('resolution').value,
-        duration_mode: $('duration_mode').value,
-        use_watermark: $('use_watermark').checked,
-        watermark_path: $('watermark_path').value.trim(),
-        use_transition: $('transition_mode').value !== '不使用',
-        transition_mode: $('transition_mode').value,
-        transition_type: $('transition_type').value,
-        transition_duration: $('transition_duration').value,
-        transition_types: collectTransitionPool(),
-        use_subtitle: $('use_subtitle').checked,
-        bgm_mode: $('bgm_mode').value,
-        bgm_folder: $('bgm_folder').value.trim(),
-        fixed_bgm: $('fixed_bgm').value,
-        bgm_volume: $('bgm_volume').value,
-        normalize_audio: $('normalize_audio').checked,
-        bgm_fade: $('bgm_fade').checked,
-        bgm_ducking: $('bgm_ducking').checked,
-      };
-      lastOutputFolder = payload.output_folder;
-      outputLoaded = false;
-      $('output_files').innerHTML = '';
-      const data = await api('/api/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!data.ok) showMessage(data.error || '启动失败');
-      else {
-        $('log').textContent = '';
-        $('status').textContent = '运行中';
-        updateButtons();
-      }
-    }
-
-    async function retryFailed() {
-      const data = await api('/api/retry_failed', { method: 'POST' });
-      if (!data.ok) showMessage(data.error || '没有可重试的失败项');
-      else {
-        $('log').textContent = '';
-        $('status').textContent = '重试中';
-        updateButtons();
-      }
-    }
-
-    async function cancelJob() {
-      await api('/api/cancel', { method: 'POST' });
-    }
-
-    async function togglePause() {
-      const data = await api('/api/pause', { method: 'POST' });
-      paused = data.paused;
-      $('pause_btn').textContent = paused ? '继续' : '暂停';
-    }
-
-    function renderPreview(state) {
-      const box = $('preview_box');
-      if (!box || box.dataset.rendered) return;
-      const item = (state.success_items || [])[0];
-      if (!item) return;
-      const folder = item.output.replace(/[\\/][^\\/]+$/, '');
-      const name = item.output.split(/[\\/]/).pop();
-      const url = '/api/download?folder=' + encodeURIComponent(folder) + '&name=' + encodeURIComponent(name);
-      box.innerHTML = '<strong>预览结果</strong><div style="margin-top:8px;"><video controls style="max-width:100%;max-height:320px;" src="' + url + '"></video></div>';
-      box.dataset.rendered = '1';
-    }
-
-    function renderResults(state) {
-      if (outputLoaded) return;
-      const box = $('output_files');
-      const rows = [];
-      (state.success_items || []).forEach((item) => {
-        const folder = lastOutputFolder || item.output.replace(/[\\/][^\\/]+$/, '');
-        const name = item.output.split(/[\\/]/).pop();
-        const url = '/api/download?folder=' + encodeURIComponent(folder) + '&name=' + encodeURIComponent(name);
-        rows.push(`<tr><td>${item.index}</td><td>${escapeHtml(item.head)}</td><td>${escapeHtml(item.tail)}</td><td>成功</td><td><a href="${url}" download>下载</a></td><td></td></tr>`);
-      });
-      (state.failed_items || []).forEach((item) => {
-        rows.push(`<tr><td>${item.index}</td><td>${escapeHtml(item.head)}</td><td>${escapeHtml(item.tail)}</td><td>失败</td><td></td><td>${escapeHtml(item.error || '')}</td></tr>`);
-      });
-      if (!rows.length) {
-        box.innerHTML = '<div class="hint">暂无结果明细</div>';
-      } else {
-        box.innerHTML = '<strong>结果明细</strong><table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;margin-top:8px;"><thead><tr><th>序号</th><th>开头</th><th>结尾</th><th>状态</th><th>输出</th><th>失败原因</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
-      }
-      outputLoaded = true;
-    }
-
-    function escapeHtml(value) {
-      return String(value || '').replace(/[&<>"]/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
-    }
-
-    function updateButtons() {
-      $('start_btn').disabled = false;
-      $('pause_btn').disabled = false;
-      $('cancel_btn').disabled = false;
-    }
-
-    async function applyPlatformPreset() {
-      const name = $('platform_preset').value;
-      if (!name) return;
-      const preset = await api('/api/platform_presets/apply?name=' + encodeURIComponent(name));
-      if (preset.resolution) $('resolution').value = preset.resolution;
-      if (preset.duration_mode) $('duration_mode').value = preset.duration_mode;
-    }
-
-    async function refreshTemplates() {
-      const data = await api('/api/templates');
-      const box = $('template_list');
-      const items = data.templates || [];
-      box.textContent = items.length ? '已保存模板：' + items.join('、') : '暂无模板';
-    }
-
-    async function saveTemplate() {
-      const name = $('template_name').value.trim();
-      if (!name) { showMessage('请填写模板名称'); return; }
-      const data = await api('/api/templates/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, config: collectConfig() }),
-      });
-      showMessage(data.ok ? '模板已保存' : (data.error || '保存失败'));
-      refreshTemplates();
-    }
-
-    async function loadTemplate() {
-      const name = $('template_name').value.trim();
-      if (!name) { showMessage('请填写要载入的模板名称'); return; }
-      const cfg = await api('/api/templates/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (cfg && Object.keys(cfg).length) applyConfig(cfg);
-      else showMessage('模板不存在');
-    }
-
-    async function deleteTemplate() {
-      const name = $('template_name').value.trim();
-      if (!name) { showMessage('请填写要删除的模板名称'); return; }
-      const data = await api('/api/templates/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      showMessage(data.ok ? '模板已删除' : '模板不存在');
-      refreshTemplates();
-    }
-
-    async function clearHistory() {
-      if (!confirm('确定要清空所有任务历史记录吗？')) return;
-      const data = await api('/api/history/clear');
-      showMessage(data.ok ? '已清空历史记录' : '清空失败');
-      loadHistory();
-    }
-
-    async function loadHistory() {
-      const data = await api('/api/history');
-      const box = $('history_list');
-      const items = data.history || [];
-      if (!items.length) {
-        box.textContent = '暂无历史记录';
-        return;
-      }
-      box.innerHTML = items.slice(0, 20).map((item) => {
-        const cfg = item.config || {};
-        return `<div style="border-bottom:1px solid #e2e8f0;padding:6px 0;">${item._file} · 成功 ${item.success} · 跳过 ${item.skipped} · 失败 ${item.failed} · ${cfg.head_folder || ''}</div>`;
-      }).join('');
-    }
-
-    async function poll() {
-      try {
-        const state = await api('/api/status');
-        const percent = state.total ? Math.min(100, Math.round((state.current / state.total) * 100)) : 0;
-        $('progress').style.width = percent + '%';
-        $('log').textContent = state.logs.join('\n');
-        $('start_btn').disabled = state.running;
-        $('pause_btn').disabled = !state.running;
-        $('cancel_btn').disabled = !state.running;
-        if (state.running) {
-          $('status').textContent = state.paused ? '已暂停' : `运行中 ${state.current}/${state.total}`;
-          $('pause_btn').textContent = state.paused ? '继续' : '暂停';
-        } else {
-          $('pause_btn').textContent = '暂停';
-          if (state.error) $('status').textContent = '发生错误';
-          else if (state.cancelled) $('status').textContent = '已取消';
-          else if (state.success !== undefined) $('status').textContent = `已完成：成功 ${state.success}，失败 ${state.failed}`;
-        }
-        if (!state.running && !state.error && state.success > 0) {
-          renderResults(state);
-          renderPreview(state);
-        }
-      } catch (e) {
-        $('status').textContent = '服务连接失败';
-      }
-    }
-
-    ['head_folder', 'tail_folder', 'middle_folder', 'bgm_folder'].forEach((id) => {
-      $(id).addEventListener('change', scanMaterials);
-    });
-    setInterval(poll, 1000);
-    poll();
-    (async () => {
-      const cfg = await api('/api/config/load');
-      if (cfg && Object.keys(cfg).length) applyConfig(cfg);
-      loadHistory();
-      refreshTemplates();
-    })();
-  </script>
+  <script src="/vendor/vue.global.prod.js?v=20260912"></script>
+  <script src="/app.js?v=20260912"></script>
 </body>
 </html>
