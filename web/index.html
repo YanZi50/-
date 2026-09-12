@@ -436,13 +436,6 @@
                     <option v-for="m in materials.bgm" :key="m.path" :value="m.path">{{ m.name }}</option>
                   </select>
                 </div>
-                <div class="field">
-                  <div class="field-label">BGM 音量</div>
-                  <div class="range-wrap">
-                    <input type="range" min="0" max="1" step="0.05" v-model.number="params.bgm_volume">
-                    <span class="range-val">{{ Math.round(params.bgm_volume*100) }}%</span>
-                  </div>
-                </div>
                 <div class="btn-row">
                   <label class="switch">
                     <input type="checkbox" v-model="params.bgm_fade"><span class="track"></span>
@@ -517,6 +510,22 @@
                   <span class="switch-label">自动字幕</span>
                 </label>
                 <span class="card-hint">字幕需要 faster-whisper</span>
+              </div>
+              <div class="grid-2" style="margin-top:10px">
+                <div class="field">
+                  <div class="field-label">原声音量</div>
+                  <div class="range-wrap">
+                    <input type="range" min="0" max="2" step="0.05" v-model.number="params.audio_volume">
+                    <span class="range-val">{{ Math.round(params.audio_volume*100) }}%</span>
+                  </div>
+                </div>
+                <div class="field">
+                  <div class="field-label">BGM 音量</div>
+                  <div class="range-wrap">
+                    <input type="range" min="0" max="2" step="0.05" v-model.number="params.bgm_volume">
+                    <span class="range-val">{{ Math.round(params.bgm_volume*100) }}%</span>
+                  </div>
+                </div>
               </div>
             </div>
 

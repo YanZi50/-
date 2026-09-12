@@ -92,6 +92,7 @@ const state = reactive({
     transition_types: transitionOptions.map((t) => t.value),
     bgm_mode: '不使用',
     bgm_volume: 0.2,
+    audio_volume: 1.0,
     bgm_fade: false,
     bgm_ducking: false,
     fixed_bgm: '',
@@ -278,6 +279,7 @@ function applyConfig(cfg) {
   p.transition_types = cfg.transition_types?.length ? cfg.transition_types : transitionOptions.map((t) => t.value);
   p.bgm_mode = cfg.bgm_mode || '不使用';
   p.bgm_volume = cfg.bgm_volume ?? 0.2;
+  p.audio_volume = cfg.audio_volume ?? 1.0;
   p.bgm_fade = !!cfg.bgm_fade;
   p.bgm_ducking = !!cfg.bgm_ducking;
   p.fixed_bgm = cfg.fixed_bgm || '';

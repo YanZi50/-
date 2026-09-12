@@ -551,6 +551,7 @@ def mix_bgm(
     fade: bool = False,
     ducking: bool = False,
     bgm_duration: float = 0.0,
+    audio_volume: float = 1.0,
 ) -> None:
     bgm_chain = f"[1:a]volume={volume:.2f}"
     if fade:
@@ -561,12 +562,12 @@ def mix_bgm(
     if ducking:
         fc = (
             f"{bgm_chain};"
-            "[0:a]asplit=2[voice][mixvoice];"
+            f"[0:a]volume={audio_volume:.2f},asplit=2[voice][mixvoice];"
             "[bgm][voice]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=200[duckbgm];"
             "[mixvoice][duckbgm]amix=inputs=2:duration=first:dropout_transition=3[a]"
         )
     else:
-        fc = f"{bgm_chain};[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=3[a]"
+        fc = f"{bgm_chain};[0:a]volume={audio_volume:.2f}[voice];[voice][bgm]amix=inputs=2:duration=first:dropout_transition=3[a]"
     args = [
         _ffmpeg(),
         "-y",
@@ -591,6 +592,19 @@ def mix_bgm(
         "-shortest",
         dst,
     ]
+    run_ffmpeg(args, cancel_event, pause_event, log)
+
+
+def apply_audio_volume(
+    src: str,
+    dst: str,
+    volume: float,
+    cancel_event,
+    pause_event,
+    log: Optional[Callable[[str], None]] = None,
+) -> None:
+    """无 BGM 时调整原声音量：视频流流复制，仅重编码音频，速度快。"""
+    args = [_ffmpeg(), "-y", "-i", src, "-c:v", "copy", "-af", f"volume={volume:.2f}", "-c:a", "aac", "-b:a", "192k", dst]
     run_ffmpeg(args, cancel_event, pause_event, log)
 
 
@@ -843,6 +857,7 @@ class JobConfig:
     bgm_folder: str = ""
     fixed_bgm: Optional[str] = None
     bgm_volume: float = 0.2
+    audio_volume: float = 1.0
     normalize_audio: bool = False
     bgm_fade: bool = False
     bgm_ducking: bool = False
@@ -1402,6 +1417,12 @@ def _process_one_combo(
             trim_duration(concat_path, trimmed, duration_limit, cancel_event, pause_event, log)
             current = trimmed
 
+        # 原声音量：有 BGM 时在 mix_bgm 原声链处理；无 BGM 时单独重编码音频调整
+        if config.bgm_mode == "不使用" and abs(config.audio_volume - 1.0) > 0.001:
+            volumed = str(tempdir / "with_volume.mp4")
+            apply_audio_volume(current, volumed, config.audio_volume, cancel_event, pause_event, log)
+            current = volumed
+
         if config.bgm_mode in {"本地导入", "算法生成", "音乐文件夹固定", "音乐文件夹随机"}:
             if config.bgm_mode == "算法生成":
                 bgm = str(tempdir / "bgm.wav")
@@ -1419,6 +1440,7 @@ def _process_one_combo(
                 current, bgm, mixed, float(config.bgm_volume),
                 cancel_event, pause_event, log,
                 fade=config.bgm_fade, ducking=config.bgm_ducking, bgm_duration=bgm_duration,
+                audio_volume=float(config.audio_volume),
             )
             current = mixed
 
