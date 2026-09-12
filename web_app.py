@@ -677,6 +677,7 @@ class Handler(BaseHTTPRequestHandler):
             normalize_audio=bool(payload.get("normalize_audio", False)),
             bgm_fade=bool(payload.get("bgm_fade", False)),
             bgm_ducking=bool(payload.get("bgm_ducking", False)),
+            fit_mode=str(payload.get("fit_mode", "fit")),
             output_name_template=str(payload.get("output_name_template", "output_{序号}_{开头}_{结尾}")),
             random_seed=_safe_int(payload.get("random_seed", 20260905), 20260905),
             dedupe_enabled=bool(payload.get("dedupe_enabled", True)),

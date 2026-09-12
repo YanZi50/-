@@ -70,9 +70,13 @@ def _file_fingerprint(path: str, extra: str = "") -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
-def _norm_cache_path(src: str, width: int, height: int, has_audio: bool, normalize_audio: bool) -> Path:
+def _norm_cache_path(
+    src: str, width: int, height: int, has_audio: bool, normalize_audio: bool, fit_mode: str = "fit"
+) -> Path:
     # normv2：音频处理加入 aresample=async=1:first_pts=0 强制音画对齐，旧缓存（normv1）作废
-    key = _file_fingerprint(src, f"normv2|{width}x{height}|{has_audio}|{normalize_audio}")
+    # fit_mode：画面适配模式（fit/blur/crop），"fit"（黑边）省略后缀以复用历史缓存
+    mode = "" if fit_mode == "fit" else f"|{fit_mode}"
+    key = _file_fingerprint(src, f"normv2|{width}x{height}|{has_audio}|{normalize_audio}{mode}")
     folder = cache_dir() / "norm"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / f"{key}.mp4"
@@ -200,7 +204,26 @@ def run_ffmpeg(
         raise MediaError(f"FFmpeg 执行失败，返回码 {proc.returncode}")
 
 
-def _filter_scale_pad(width: int, height: int) -> str:
+def _filter_scale_pad(width: int, height: int, fit_mode: str = "fit") -> str:
+    """画面适配滤镜链。
+
+    fit（默认）：等比缩放 + 黑边补齐（letterbox）
+    blur：背景铺满 + 高斯模糊填充，前景等比居中（信息流标准观感）
+    crop：等比放大铺满 + 居中裁剪（无黑边，可能裁掉边缘内容）
+    """
+    if fit_mode == "blur":
+        return (
+            f"[0:v]split=2[bgv][fgv];"
+            f"[bgv]scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},boxblur=20:2[bg];"
+            f"[fgv]scale={width}:{height}:force_original_aspect_ratio=decrease[fg];"
+            f"[bg][fg]overlay=(W-w)/2:(H-h)/2,settb=AVTB,setsar=1,fps=30,format=yuv420p[out]"
+        )
+    if fit_mode == "crop":
+        return (
+            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{height},setsar=1,fps=30,format=yuv420p"
+        )
     return (
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
@@ -219,8 +242,9 @@ def normalize_clip(
     pause_event,
     log: Optional[Callable[[str], None]] = None,
     normalize_audio: bool = False,
+    fit_mode: str = "fit",
 ) -> None:
-    cached = _norm_cache_path(src, width, height, has_audio, normalize_audio)
+    cached = _norm_cache_path(src, width, height, has_audio, normalize_audio, fit_mode)
     if cached.exists() and cached.stat().st_size > 0:
         shutil.copy2(cached, dst)
         if log:
@@ -230,7 +254,8 @@ def normalize_clip(
     tmp_cache = cached.with_name(
         f"{cached.stem}.{os.getpid()}.{threading.get_ident()}.mp4"
     )
-    vf = _filter_scale_pad(width, height)
+    is_blur = fit_mode == "blur"
+    vf = _filter_scale_pad(width, height, fit_mode)
     args = [_ffmpeg(), "-y", "-i", src]
     if not has_audio:
         args += [
@@ -241,12 +266,11 @@ def normalize_clip(
             "-i",
             "anullsrc=channel_layout=stereo:sample_rate=48000",
         ]
-    args += [
-        "-vf",
-        vf,
-        "-map",
-        "0:v:0",
-    ]
+    if is_blur:
+        # 模糊填充使用带标签的复杂滤镜图，必须走 -filter_complex
+        args += ["-filter_complex", vf, "-map", "[out]"]
+    else:
+        args += ["-vf", vf, "-map", "0:v:0"]
     if has_audio:
         args += ["-map", "0:a:0"]
         # 音画对齐：
@@ -821,6 +845,7 @@ class JobConfig:
     normalize_audio: bool = False
     bgm_fade: bool = False
     bgm_ducking: bool = False
+    fit_mode: str = "fit"
     output_name_template: str = "output_{序号}_{开头}_{结尾}"
     random_seed: int = 20260905
     dedupe_enabled: bool = True
@@ -1324,11 +1349,11 @@ def _process_one_combo(
 
         normalize_clip(
             head, head_norm, width, height, head_info["duration"], head_info["has_audio"],
-            cancel_event, pause_event, log, config.normalize_audio,
+            cancel_event, pause_event, log, config.normalize_audio, config.fit_mode,
         )
         normalize_clip(
             tail, tail_norm, width, height, tail_info["duration"], tail_info["has_audio"],
-            cancel_event, pause_event, log, config.normalize_audio,
+            cancel_event, pause_event, log, config.normalize_audio, config.fit_mode,
         )
 
         clips = [head_norm]
@@ -1341,7 +1366,7 @@ def _process_one_combo(
             middle_norm = str(tempdir / f"middle_norm_{i}.mp4")
             normalize_clip(
                 middle, middle_norm, width, height, middle_info["duration"], middle_info["has_audio"],
-                cancel_event, pause_event, log, config.normalize_audio,
+                cancel_event, pause_event, log, config.normalize_audio, config.fit_mode,
             )
             clips.append(middle_norm)
             durations.append(probe_media(middle_norm)["duration"])

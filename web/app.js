@@ -98,6 +98,7 @@ const state = reactive({
     watermark_opacity: 0.6,
     normalize_audio: false,
     use_subtitle: false,
+    fit_mode: 'fit',
   },
   presets: {},
   presetName: '',

@@ -244,6 +244,15 @@
                   </div>
                 </div>
               </div>
+              <div class="field">
+                <div class="field-label">画面适配（素材比例与目标不一致时）</div>
+                <div class="seg">
+                  <button :class="{on: params.fit_mode==='fit'}" @click="params.fit_mode='fit'">黑边</button>
+                  <button :class="{on: params.fit_mode==='blur'}" @click="params.fit_mode='blur'">模糊填充</button>
+                  <button :class="{on: params.fit_mode==='crop'}" @click="params.fit_mode='crop'">智能裁剪</button>
+                </div>
+                <div class="card-hint" style="margin-top:4px">黑边：等比缩放+黑边补齐（默认）；模糊填充：背景模糊+内容居中；智能裁剪：铺满画面裁掉多余边缘</div>
+              </div>
               <div class="grid-2">
                 <div class="field">
                   <div class="field-label">平台预设</div>
