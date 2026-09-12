@@ -13,7 +13,7 @@ def history_dir() -> Path:
 def save_history(record: dict) -> Path:
     folder = history_dir()
     folder.mkdir(parents=True, exist_ok=True)
-    task_id = time.strftime("%Y%m%d_%H%M%S")
+    task_id = time.strftime("%Y%m%d_%H%M%S") + f"_{int(time.time() * 1000) % 1000:03d}"
     path = folder / f"task_{task_id}.json"
     path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
