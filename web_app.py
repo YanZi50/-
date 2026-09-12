@@ -10,6 +10,7 @@ if getattr(_sys, "frozen", False):
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -55,6 +56,15 @@ else:
 
 # 运行中任务快照：服务被强杀/重启后，据此恢复"上次任务中断"，支持断点续跑
 SNAPSHOT_FILE = STATE_DIR / "last_task.json"
+
+
+def _fmt_size(n: int) -> str:
+    n = float(max(0, n))
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return f"{n:.1f} TB"
 
 
 # ---------------------------------------------------------------------------
@@ -502,6 +512,15 @@ class Handler(BaseHTTPRequestHandler):
             ]
             self._send_json({"ok": True, "report": report, "bad": bad})
             return
+        if route == "/api/health_check":
+            payload = self._read_json()
+            config = self._make_config(payload)
+            if isinstance(config, str):
+                self._send_json({"ok": False, "error": config}, 400)
+                return
+            result = self._health_check(config)
+            self._send_json({"ok": True, **result})
+            return
         if route == "/api/zip":
             payload = self._read_json()
             folder = str(payload.get("folder", "")).strip()
@@ -833,6 +852,120 @@ class Handler(BaseHTTPRequestHandler):
         _clear_snapshot()
         STATE.interrupted = None
         self._send_json({"ok": True})
+
+    # ----------------------------------------------------------------
+    # 开始前全局体检（素材健康 / 输出目录 / 磁盘空间 / 组合数 / FFmpeg）
+    # ----------------------------------------------------------------
+    def _health_check(self, config: JobConfig) -> dict:
+        items: list[dict] = []
+
+        def add(level: str, scope: str, msg: str) -> None:
+            items.append({"level": level, "scope": scope, "msg": msg})
+
+        # 1 素材健康
+        report = precheck_materials(config)
+        bad = [
+            {"kind": k, "name": it["name"], "error": it["error"]}
+            for k, its in report.items()
+            for it in its
+            if not it["ok"]
+        ]
+        if bad:
+            names = "、".join(b["name"] for b in bad[:3])
+            add("error", "素材", f"{len(bad)} 个素材无法读取：{names}{'…' if len(bad) > 3 else ''}")
+        else:
+            add("ok", "素材", "全部素材可正常读取")
+
+        # 2 输出目录
+        out = Path(config.output_folder)
+        if not out.exists():
+            add("warn", "输出目录", "输出目录不存在，生成时自动创建")
+        elif not os.access(out, os.W_OK):
+            add("error", "输出目录", "输出目录不可写，请更换位置")
+        else:
+            add("ok", "输出目录", "输出目录可写")
+
+        # 3 磁盘空间（粗估输出体积 vs 剩余空间）
+        try:
+            drive = os.path.splitdrive(str(out))[0] + os.sep
+            usage = shutil.disk_usage(drive if os.path.isdir(drive) else ".")
+            need = self._estimate_output_bytes(config, report)
+            free = usage.free
+            if need > 0:
+                if free < need:
+                    add("error", "磁盘空间", f"剩余 {_fmt_size(free)}，预估输出 {_fmt_size(need)}，空间不足")
+                elif free < need * 2:
+                    add("warn", "磁盘空间", f"剩余 {_fmt_size(free)}，预估输出 {_fmt_size(need)}，建议先清理空间")
+                else:
+                    add("ok", "磁盘空间", f"剩余 {_fmt_size(free)}，预估输出 {_fmt_size(need)}")
+        except Exception:
+            pass
+
+        # 4 组合数提示
+        try:
+            combos = self._count_combos(config)
+            if config.count > combos:
+                add("warn", "生成数量", f"请求 {config.count} 条，素材最多 {combos} 种不同组合，超出部分将重复组合")
+            else:
+                add("ok", "生成数量", f"{config.count} 条，素材可组合 {combos} 种")
+        except Exception:
+            pass
+
+        # 5 FFmpeg 可用性
+        if not self._ffmpeg_ok():
+            add("error", "引擎", "FFmpeg 不可用，无法生成")
+        else:
+            add("ok", "引擎", "FFmpeg 可用")
+
+        errors = [i for i in items if i["level"] == "error"]
+        warns = [i for i in items if i["level"] == "warn"]
+        return {"ok": not errors, "items": items, "errors": errors, "warns": warns, "report": report}
+
+    def _ffmpeg_ok(self) -> bool:
+        try:
+            from video_engine import _ffmpeg
+            exe = _ffmpeg()
+            return bool(exe) and os.path.exists(str(exe))
+        except Exception:
+            return False
+
+    def _count_combos(self, config: JobConfig) -> int:
+        head = len(scan_videos(config.head_folder))
+        tail = len(scan_videos(config.tail_folder))
+        if config.fixed_head and config.fixed_tail:
+            return 1
+        if config.fixed_head:
+            return tail
+        if config.fixed_tail:
+            return head
+        return head * tail
+
+    def _estimate_output_bytes(self, config: JobConfig, report: dict) -> int:
+        """粗估输出体积：count × 单条时长 × 码率系数（保守估算，MB 级偏差可接受）。"""
+        durations = [
+            it["duration"] or 0
+            for kind in ("head", "tail", "middle")
+            for it in report.get(kind, [])
+            if it.get("ok")
+        ]
+        if not durations:
+            return 0
+        avg = sum(durations) / len(durations)
+        per_clip = avg * 2.5  # 开头 + 中间 + 结尾的保守倍数
+        height = 0
+        for kind in ("head", "tail", "middle"):
+            for it in report.get(kind, []):
+                if it.get("ok"):
+                    height = max(height, it.get("height") or 0)
+        if height >= 1920:
+            rate = 1.2
+        elif height >= 1080:
+            rate = 0.7
+        elif height >= 720:
+            rate = 0.4
+        else:
+            rate = 0.25
+        return int(config.count * per_clip * rate * 1024 * 1024)
 
     def _preview(self) -> None:
         if STATE.running:

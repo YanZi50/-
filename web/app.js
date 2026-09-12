@@ -68,6 +68,9 @@ const state = reactive({
   serverOk: true,
   selectBusy: false,
   msg: { text: '', type: 'info' },
+  health: null,
+  healthChecking: false,
+  previewTrans: 'fade',
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
@@ -168,6 +171,16 @@ const resultRows = computed(() => {
     ok: false, downloadUrl: '', error: it.error,
   }));
   return rows.sort((a, b) => a.index - b.index);
+});
+
+/* ---------- 转场预览 ---------- */
+const previewTransClass = computed(() =>
+  transitionClass(state.params.transition_mode === '固定' ? state.params.transition_type : state.previewTrans)
+);
+const previewTransName = computed(() => {
+  const v = state.params.transition_mode === '固定' ? state.params.transition_type : state.previewTrans;
+  const t = transitionOptions.find((x) => x.value === v);
+  return t ? t.label : '';
 });
 
 function makeDownloadUrl(outputPath) {
@@ -564,6 +577,27 @@ function toggleChip(value) {
   state.params.transition_types = pool.includes(value)
     ? pool.filter((v) => v !== value)
     : [...pool, value];
+  state.previewTrans = value; // 点击即预览该转场
+}
+
+/* ---------- 转场预览 ---------- */
+function transitionClass(value) {
+  const map = {
+    fade: 'tp-fade', dissolve: 'tp-fade',
+    slideleft: 'tp-slide-l', slideright: 'tp-slide-r', slideup: 'tp-slide-u', slidedown: 'tp-slide-d',
+    wipeleft: 'tp-wipe-l', wiperight: 'tp-wipe-r', wipeup: 'tp-wipe-u', wipedown: 'tp-wipe-d',
+    circleopen: 'tp-circle', circleclose: 'tp-circle', circlecrop: 'tp-circle',
+    smoothleft: 'tp-slide-l', smoothright: 'tp-slide-r', smoothup: 'tp-slide-u', smoothdown: 'tp-slide-d',
+    diagtl: 'tp-wipe-l', diagtr: 'tp-wipe-r', diagbl: 'tp-wipe-u', diagbr: 'tp-wipe-d',
+    zoomin: 'tp-zoom', pixelize: 'tp-pixel',
+    fadeblack: 'tp-fade', fadewhite: 'tp-fade',
+    coverleft: 'tp-slide-l', coverright: 'tp-slide-r', coverup: 'tp-slide-u', coverdown: 'tp-slide-d',
+    revealleft: 'tp-slide-l', revealright: 'tp-slide-r', revealup: 'tp-slide-u', revealdown: 'tp-slide-d',
+    vertopen: 'tp-vert', vertclose: 'tp-vert',
+    horzopen: 'tp-horz', horzclose: 'tp-horz',
+    squeezeh: 'tp-squeeze-h', squeezev: 'tp-squeeze-v',
+  };
+  return map[value] || 'tp-fade';
 }
 
 /* ---------- 平台预设 ---------- */
@@ -642,21 +676,28 @@ function loadFromHistory(h) {
 
 /* ---------- 预检 ---------- */
 async function precheck() {
+  if (state.healthChecking) return;
+  state.healthChecking = true;
   try {
-    const data = await api('/api/precheck', {
+    const data = await api('/api/health_check', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(collectConfig()),
     });
-    if (!data.ok) { showMsg(data.error || '预检失败', 'error'); return; }
-    state.precheckBad = data.bad || [];
-    const total = Object.values(data.report).reduce((n, arr) => n + arr.length, 0);
-    if (state.precheckBad.length) {
-      showMsg(`预检完成：${total} 个素材，发现 ${state.precheckBad.length} 个问题`, 'error');
+    if (!data.ok) { showMsg(data.error || '体检失败', 'error'); return; }
+    state.health = data;
+    state.precheckBad = data.report ? Object.values(data.report).flat().filter((m) => !m.ok) : [];
+    const total = data.report ? Object.values(data.report).reduce((n, arr) => n + arr.length, 0) : 0;
+    if (data.errors.length) {
+      showMsg(`体检未通过：${data.errors[0].msg}`, 'error');
+    } else if (data.warns.length) {
+      showMsg(`体检通过：${total} 个素材，${data.warns.length} 项提醒（${data.warns[0].msg}）`, 'info');
     } else {
-      showMsg(`预检完成：${total} 个素材全部正常`, 'success');
+      showMsg(`体检通过：${total} 个素材全部正常`, 'success');
     }
   } catch (e) {
-    showMsg('预检失败：' + e.message, 'error');
+    showMsg('体检失败：' + e.message, 'error');
+  } finally {
+    state.healthChecking = false;
   }
 }
 
@@ -670,6 +711,12 @@ async function startJob() {
     return;
   }
   state.stepErrors[1] = false;
+  // 开始前全局体检（每次实时检查，避免素材改动后状态过期）：有阻断问题则不启动
+  await precheck();
+  if (state.health && state.health.errors.length) {
+    showMsg('体检未通过，无法生成：' + state.health.errors[0].msg, 'error');
+    return;
+  }
   const data = await api('/api/start', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -834,6 +881,7 @@ createApp({
       precheck, startJob, previewJob, togglePause, cancelJob, retryFailed,
       resumeJob, discardInterrupted,
       downloadZip, Math,
+      previewTransClass, previewTransName,
     };
   },
 }).mount('#app');

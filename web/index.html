@@ -404,6 +404,13 @@
                         @click="toggleChip(t.value)">{{ t.label }}</span>
                 </div>
               </div>
+              <div class="trans-preview" v-if="params.transition_mode!=='不使用'">
+                <div class="trans-stage" :key="previewTransClass" :class="previewTransClass">
+                  <div class="trans-b"></div>
+                  <div class="trans-a"></div>
+                </div>
+                <div class="trans-label">{{ previewTransName }}</div>
+              </div>
             </div>
 
             <div class="card">
@@ -545,6 +552,22 @@
               </div>
               <div v-if="precheckBad.length" class="msg warn">
                 预检发现 {{ precheckBad.length }} 个问题素材：{{ precheckBad.map(b=>b.name).join('、') }}，请处理后再批量生成
+              </div>
+              <div v-if="health && health.items" class="health-panel">
+                <div class="health-title">
+                  <span>开始前体检</span>
+                  <span v-if="health.errors.length" class="health-badge bad">未通过 · {{ health.errors.length }} 项问题</span>
+                  <span v-else-if="health.warns.length" class="health-badge warn">通过 · {{ health.warns.length }} 项提醒</span>
+                  <span v-else class="health-badge good">全部通过</span>
+                  <span class="health-recheck" @click="precheck">重新体检</span>
+                </div>
+                <div class="health-items">
+                  <div v-for="(it, i) in health.items" :key="i" class="health-item" :class="it.level">
+                    <span class="health-dot"></span>
+                    <b>{{ it.scope }}</b>
+                    <span class="health-msg">{{ it.msg }}</span>
+                  </div>
+                </div>
               </div>
               <div class="btn-row">
                 <button class="btn soft" @click="precheck" :disabled="job.running">预检素材</button>

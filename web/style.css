@@ -398,6 +398,91 @@ input[type="range"]::-webkit-slider-thumb {
   to { opacity: 1; transform: translateX(0); }
 }
 
+/* ---------- 开始前体检面板 ---------- */
+.health-panel {
+  margin-top: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.health-title {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; color: var(--text-1); margin-bottom: 8px;
+}
+.health-badge {
+  padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+}
+.health-badge.good { background: var(--success-soft); color: var(--success); }
+.health-badge.warn { background: rgba(251, 191, 36, 0.14); color: #f59e0b; }
+.health-badge.bad { background: var(--danger-soft); color: var(--danger); }
+.health-recheck {
+  margin-left: auto; color: var(--accent); cursor: pointer; font-weight: 600;
+  opacity: 0.85; transition: opacity var(--speed);
+}
+.health-recheck:hover { opacity: 1; text-decoration: underline; }
+.health-items { display: flex; flex-direction: column; gap: 5px; }
+.health-item { display: flex; align-items: center; gap: 7px; color: var(--text-2); }
+.health-item b { min-width: 60px; font-weight: 600; color: var(--text-1); }
+.health-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.health-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--success); }
+.health-item.warn .health-dot { background: #f59e0b; }
+.health-item.error .health-dot { background: var(--danger); }
+.health-item.error { color: var(--danger); }
+.health-item.error b { color: var(--danger); }
+
+/* ---------- 转场预览 ---------- */
+.trans-preview {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 12px; padding: 8px 10px;
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  background: var(--bg-soft);
+}
+.trans-stage {
+  position: relative; width: 132px; height: 78px;
+  border-radius: 8px; overflow: hidden;
+  background: #0f172a; flex-shrink: 0;
+}
+.trans-a, .trans-b { position: absolute; inset: 0; }
+.trans-b { background: linear-gradient(135deg, #06b6d4, #3b82f6); }
+.trans-a { background: linear-gradient(135deg, #f43f5e, #f97316); }
+.trans-label { font-size: 12px; color: var(--text-2); font-weight: 600; }
+
+.trans-stage.tp-fade .trans-a { animation: tp-fade-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-slide-l .trans-a { animation: tp-slide-l-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-slide-r .trans-a { animation: tp-slide-r-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-slide-u .trans-a { animation: tp-slide-u-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-slide-d .trans-a { animation: tp-slide-d-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-wipe-l .trans-a { animation: tp-wipe-l-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-wipe-r .trans-a { animation: tp-wipe-r-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-wipe-u .trans-a { animation: tp-wipe-u-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-wipe-d .trans-a { animation: tp-wipe-d-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-circle .trans-a { animation: tp-circle-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-zoom .trans-a { animation: tp-zoom-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-pixel .trans-a { animation: tp-pixel-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-vert .trans-a { animation: tp-vert-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-horz .trans-a { animation: tp-horz-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-squeeze-h .trans-a { animation: tp-squeeze-h-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-squeeze-v .trans-a { animation: tp-squeeze-v-kf 2.4s ease-in-out infinite; }
+
+@keyframes tp-fade-kf { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
+@keyframes tp-slide-l-kf { 0%, 45% { transform: translateX(0); } 55%, 100% { transform: translateX(-100%); } }
+@keyframes tp-slide-r-kf { 0%, 45% { transform: translateX(0); } 55%, 100% { transform: translateX(100%); } }
+@keyframes tp-slide-u-kf { 0%, 45% { transform: translateY(0); } 55%, 100% { transform: translateY(-100%); } }
+@keyframes tp-slide-d-kf { 0%, 45% { transform: translateY(0); } 55%, 100% { transform: translateY(100%); } }
+@keyframes tp-wipe-l-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(0 100% 0 0); } }
+@keyframes tp-wipe-r-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(0 0 0 100%); } }
+@keyframes tp-wipe-u-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(100% 0 0 0); } }
+@keyframes tp-wipe-d-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(0 0 100% 0); } }
+@keyframes tp-circle-kf { 0%, 45% { clip-path: circle(150% at 50% 50%); } 55%, 100% { clip-path: circle(0% at 50% 50%); } }
+@keyframes tp-zoom-kf { 0%, 45% { opacity: 1; transform: scale(1); } 55%, 100% { opacity: 0; transform: scale(2.2); } }
+@keyframes tp-pixel-kf { 0%, 45% { opacity: 1; filter: blur(0); } 55%, 100% { opacity: 0; filter: blur(22px); } }
+@keyframes tp-vert-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(50% 0 50% 0); } }
+@keyframes tp-horz-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(0 50% 0 50%); } }
+@keyframes tp-squeeze-h-kf { 0%, 45% { transform: scaleX(1); } 55%, 100% { transform: scaleX(0); } }
+@keyframes tp-squeeze-v-kf { 0%, 45% { transform: scaleY(1); } 55%, 100% { transform: scaleY(0); } }
+
 /* ---------- 进度 ---------- */
 .progress-wrap {
   background: var(--bg-soft); border: 1px solid var(--line);
