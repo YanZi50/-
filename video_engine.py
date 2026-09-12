@@ -795,6 +795,7 @@ class JobConfig:
     fixed_middle: Optional[str] = None
     middle_items: list[str] = field(default_factory=list)
     middle_count: Optional[int] = None
+    middle_pools: list[dict] = field(default_factory=list)
     use_subtitle: bool = False
     watermark_mode: str = "铺满全屏"
     watermark_position: str = "右下角"
@@ -854,26 +855,64 @@ def pick_transition(config: "JobConfig", index: int) -> Optional[str]:
     return None
 
 
-def pick_middle_sequence(config: "JobConfig", middle_files: list[str], index: int) -> list[str]:
-    """确定一条成片使用的中间片段序列：固定勾选多条优先，否则按 middle_count 随机抽取。
+def build_middle_pools(config: "JobConfig") -> list[dict]:
+    """标准化中间素材池列表：优先使用 middle_pools（多池），否则回退旧单池字段。
 
-    middle_count 为 None 表示未显式配置：兼容旧行为，中间文件夹存在时默认插入 1 条（轮流）；
-    显式 0 表示不插入中间片段。
+    每项结构：{"folder", "files", "items", "count"}
+    - items：该池固定勾选的多条素材路径（按顺序插入）
+    - count：未勾选时从该池随机抽取条数（None 表示兼容旧行为，默认抽 1 条）
     """
-    if not middle_files:
-        return []
-    if config.middle_items:
-        return [p for p in config.middle_items if p in middle_files]
-    count = config.middle_count
-    if count is None:
-        count = 1
-    count = max(0, min(10, int(count)))
-    if count <= 0:
-        return []
-    rng = random.Random(config.random_seed + index)
-    pool = middle_files[:]
-    rng.shuffle(pool)
-    return pool[: min(count, len(pool))]
+    pools: list[dict] = []
+    if config.middle_pools:
+        for pool in config.middle_pools:
+            folder = str(pool.get("folder", "")).strip()
+            if not folder:
+                continue
+            files = scan_videos(folder)
+            items = [str(x) for x in pool.get("items", []) if str(x)][:10]
+            count_raw = pool.get("count")
+            count = None if count_raw is None else max(0, min(10, int(count_raw)))
+            pools.append({"folder": folder, "files": files, "items": items, "count": count})
+    elif config.middle_folder:
+        files = scan_videos(config.middle_folder)
+        items = [str(x) for x in (config.middle_items or []) if str(x)]
+        if config.fixed_middle and not items:
+            items = [config.fixed_middle]
+        pools.append(
+            {
+                "folder": config.middle_folder,
+                "files": files,
+                "items": items,
+                "count": config.middle_count,
+            }
+        )
+    return pools
+
+
+def pick_middle_sequence(
+    pools: list[dict], index: int, random_seed: int
+) -> list[str]:
+    """按池顺序生成一条成片的中间片段序列：每池固定勾选优先，否则随机抽取 count 条。"""
+    seq: list[str] = []
+    for pi, pool in enumerate(pools):
+        files = pool.get("files") or []
+        if not files:
+            continue
+        items = [p for p in (pool.get("items") or []) if p in files]
+        if items:
+            seq.extend(items)
+            continue
+        count = pool.get("count")
+        if count is None:
+            count = 1
+        count = max(0, min(10, int(count)))
+        if count <= 0:
+            continue
+        rng = random.Random(random_seed + index * 100 + pi)
+        shuffled = files[:]
+        rng.shuffle(shuffled)
+        seq.extend(shuffled[: min(count, len(shuffled))])
+    return seq
 
 
 def middle_display(middle_items: list[str]) -> Optional[str]:
@@ -935,10 +974,17 @@ def _unique_output_name(output_dir: Path, idx: int) -> str:
 
 def precheck_materials(config: "JobConfig") -> dict:
     """批量预检素材，返回每类素材的健康状态，坏文件提前标出。"""
+    middle_pool_files: list[str] = []
+    for pool in build_middle_pools(config):
+        middle_pool_files.extend(pool.get("files") or [])
+    middle_files: list[str] = []
+    for p in middle_pool_files:
+        if p not in middle_files:
+            middle_files.append(p)
     groups: dict[str, list[str]] = {
         "head": scan_videos(config.head_folder),
         "tail": scan_videos(config.tail_folder),
-        "middle": scan_videos(config.middle_folder) if config.middle_folder else [],
+        "middle": middle_files,
         "bgm": scan_audio(config.bgm_folder) if config.bgm_folder else [],
     }
     out: dict[str, list[dict]] = {}
@@ -1068,7 +1114,7 @@ def process_batch(
     result = BatchResult()
     head_files = scan_videos(config.head_folder)
     tail_files = scan_videos(config.tail_folder)
-    middle_files = scan_videos(config.middle_folder) if config.middle_folder else []
+    middle_pools = build_middle_pools(config)
     bgm_files = scan_audio(config.bgm_folder) if config.bgm_folder else []
     if not head_files:
         raise MediaError("开头文件夹中没有找到视频文件。")
@@ -1079,11 +1125,13 @@ def process_batch(
         raise MediaError("固定开头不在开头文件夹中，请重新选择。")
     if config.fixed_tail and config.fixed_tail not in tail_files:
         raise MediaError("固定结尾不在结尾文件夹中，请重新选择。")
-    if config.fixed_middle and config.fixed_middle not in middle_files:
-        raise MediaError("固定中间素材不在中间文件夹中，请重新选择。")
-    missing_middles = [p for p in (config.middle_items or []) if p not in middle_files]
-    if missing_middles:
-        raise MediaError(f"以下固定中间素材不在中间文件夹中：{'、'.join(Path(p).name for p in missing_middles)}")
+    for pool in middle_pools:
+        missing_items = [p for p in (pool.get("items") or []) if p not in pool.get("files", [])]
+        if missing_items:
+            raise MediaError(
+                f"中间素材池 {Path(pool['folder']).name} 中的以下固定素材不在该文件夹中："
+                f"{'、'.join(Path(p).name for p in missing_items)}"
+            )
     if config.bgm_mode == "音乐文件夹固定" and config.fixed_bgm and config.fixed_bgm not in bgm_files:
         raise MediaError("固定 BGM 不在音乐文件夹中，请重新选择。")
 
@@ -1126,7 +1174,7 @@ def process_batch(
 
     if workers <= 1:
         for idx, (head, tail) in enumerate(combos, 1):
-            middle_items = pick_middle_sequence(config, middle_files, idx)
+            middle_items = pick_middle_sequence(middle_pools, idx, config.random_seed)
             first_middle = middle_items[0] if middle_items else None
             final_name = render_output_name(config.output_name_template, idx, head, tail, first_middle)
             final_path = output_dir / final_name
@@ -1144,7 +1192,7 @@ def process_batch(
     else:
         tasks = []
         for idx, (head, tail) in enumerate(combos, 1):
-            middle_items = pick_middle_sequence(config, middle_files, idx)
+            middle_items = pick_middle_sequence(middle_pools, idx, config.random_seed)
             first_middle = middle_items[0] if middle_items else None
             final_name = render_output_name(config.output_name_template, idx, head, tail, first_middle)
             final_path = output_dir / final_name

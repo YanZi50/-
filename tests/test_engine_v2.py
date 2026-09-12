@@ -8,6 +8,7 @@ from PIL import Image
 
 from video_engine import (
     JobConfig,
+    build_middle_pools,
     cache_dir,
     concat_copy,
     get_thumbnail,
@@ -247,6 +248,64 @@ class EngineV2Tests(unittest.TestCase):
         self.assertEqual(result.success, 1)
         info = probe_media(str(Path(result.success_items[0]["output"])))
         self.assertTrue(info["has_video"])
+
+    def test_middle_pools_sequence_order(self) -> None:
+        """多池按池顺序插入：池1 固定勾选 2 条 + 池2 随机抽 1 条 → 3 段中间。"""
+        mid1 = self.temp / "mid1"
+        mid2 = self.temp / "mid2"
+        mid1.mkdir()
+        mid2.mkdir()
+        make_clip(self.head / "h.mp4", "blue")
+        make_clip(self.tail / "t.mp4", "red")
+        make_clip(mid1 / "a.mp4", "green")
+        make_clip(mid1 / "b.mp4", "cyan")
+        make_clip(mid2 / "x.mp4", "yellow")
+        make_clip(mid2 / "y.mp4", "white")
+        pools = [
+            {"folder": str(mid1), "items": [str(mid1 / "a.mp4"), str(mid1 / "b.mp4")], "count": None},
+            {"folder": str(mid2), "items": [], "count": 1},
+        ]
+        result = process_batch(
+            self._config(count=1, middle_pools=pools, middle_folder=str(mid1)),
+            threading.Event(), threading.Event(),
+        )
+        self.assertEqual(result.success, 1)
+        mids = result.success_items[0]["middle_files"]
+        self.assertEqual(len(mids), 3, "两条固定 + 一条随机 = 3 段中间")
+        self.assertEqual(Path(mids[0]).name, "a.mp4")
+        self.assertEqual(Path(mids[1]).name, "b.mp4")
+        self.assertIn(Path(mids[2]).name, {"x.mp4", "y.mp4"})
+
+    def test_build_middle_pools_fallback_single(self) -> None:
+        """无 middle_pools 时回退旧单池字段。"""
+        mid = self.temp / "middle"
+        mid.mkdir()
+        make_clip(mid / "m.mp4", "green")
+        cfg = self._config(
+            middle_folder=str(mid), middle_items=[str(mid / "m.mp4")], middle_count=2
+        )
+        pools = build_middle_pools(cfg)
+        self.assertEqual(len(pools), 1)
+        self.assertEqual(pools[0]["items"], [str(mid / "m.mp4")])
+        self.assertEqual(pools[0]["count"], 2)
+
+    def test_middle_pools_item_missing_raises(self) -> None:
+        """多池中某池固定素材缺失应报错。"""
+        mid1 = self.temp / "mid1"
+        mid2 = self.temp / "mid2"
+        mid1.mkdir()
+        mid2.mkdir()
+        make_clip(self.head / "h.mp4", "blue")
+        make_clip(self.tail / "t.mp4", "red")
+        pools = [
+            {"folder": str(mid1), "items": [str(mid1 / "ghost.mp4")], "count": None},
+            {"folder": str(mid2), "items": [], "count": 1},
+        ]
+        with self.assertRaises(Exception):
+            process_batch(
+                self._config(count=1, middle_pools=pools),
+                threading.Event(), threading.Event(),
+            )
 
 
 if __name__ == "__main__":

@@ -311,6 +311,21 @@ input[type="range"]::-webkit-slider-thumb {
 .folder-row .input { flex: 1; }
 .folder-count { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); white-space: nowrap; }
 
+/* ---------- 中间素材池 ---------- */
+.pool-card {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 10px 12px; margin-top: 12px; background: var(--bg-soft);
+}
+.pool-head { display: flex; gap: var(--space-2); align-items: center; }
+.pool-title {
+  font-size: 13px; font-weight: 600; color: var(--accent);
+  background: var(--accent-soft); border-radius: 999px;
+  padding: 2px 10px; line-height: 1.5;
+}
+.pool-card .folder-row { margin-top: 8px; }
+.btn.danger { color: var(--danger); border-color: var(--danger-soft); }
+.btn.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
+
 /* ---------- 提示 ---------- */
 .msg {
   border-radius: var(--radius-sm); padding: 9px 12px; font-size: 13px;

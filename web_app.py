@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -476,6 +477,8 @@ class Handler(BaseHTTPRequestHandler):
             folder = UPLOAD_ROOT / "middle"
         elif kind in {"watermark", "bgm"}:
             folder = UPLOAD_ROOT / "files"
+        elif re.fullmatch(r"middle_pool[1-5]", kind):
+            folder = UPLOAD_ROOT / kind
         else:
             folder = UPLOAD_ROOT / "files"
         folder.mkdir(parents=True, exist_ok=True)
@@ -597,14 +600,36 @@ class Handler(BaseHTTPRequestHandler):
         fixed_middle = str(payload.get("fixed_middle") or "").strip() or None
         middle_items = [str(x).strip() for x in payload.get("middle_items", []) if str(x).strip()]
         middle_items = middle_items[:10]
-        if fixed_middle and not middle_items:
-            middle_items = [fixed_middle]  # 兼容旧配置
         middle_count_raw = payload.get("middle_count")
         middle_count = None if middle_count_raw is None else _safe_int(middle_count_raw, 1, 0, 10)
-        if middle_items and not middle_folder:
-            return "已勾选固定中间素材，请先填写中间素材文件夹"
-        if middle_count and not middle_folder:
-            return "已设置随机中间片段，请先填写中间素材文件夹"
+
+        # 多中间素材池（用户可添加多个池，按池顺序插入头尾之间）
+        middle_pools_raw = payload.get("middle_pools")
+        middle_pools: list[dict] = []
+        if isinstance(middle_pools_raw, list):
+            for pool in middle_pools_raw[:5]:
+                pool_folder = str(pool.get("folder", "")).strip()
+                if not pool_folder:
+                    continue
+                if not os.path.isdir(pool_folder):
+                    return f"中间素材池文件夹不存在：{pool_folder}"
+                pool_items = [str(x).strip() for x in pool.get("items", []) if str(x).strip()][:10]
+                pool_count_raw = pool.get("count")
+                pool_count = None if pool_count_raw is None else _safe_int(pool_count_raw, 1, 0, 10)
+                middle_pools.append({"folder": pool_folder, "items": pool_items, "count": pool_count})
+        if middle_pools:
+            # 多池模式下，旧字段取第一个池的值（保持兼容），引擎优先使用 middle_pools
+            middle_folder = middle_pools[0]["folder"]
+            middle_items = middle_pools[0]["items"]
+            middle_count = middle_pools[0]["count"]
+            fixed_middle = None
+        else:
+            if fixed_middle and not middle_items:
+                middle_items = [fixed_middle]  # 兼容旧配置
+            if middle_items and not middle_folder:
+                return "已勾选固定中间素材，请先填写中间素材文件夹"
+            if middle_count and not middle_folder:
+                return "已设置随机中间片段，请先填写中间素材文件夹"
 
         return JobConfig(
             head_folder=head_folder,
@@ -637,6 +662,7 @@ class Handler(BaseHTTPRequestHandler):
             fixed_middle=fixed_middle,
             middle_items=middle_items,
             middle_count=middle_count,
+            middle_pools=middle_pools,
             use_subtitle=use_subtitle,
             watermark_mode=str(payload.get("watermark_mode", "铺满全屏")),
             watermark_position=str(payload.get("watermark_position", "右下角")),

@@ -70,7 +70,7 @@ const state = reactive({
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
-  middleSelected: [],
+  middlePools: [{ id: 1, folder: '', items: [], count: 1, files: [], expanded: false, shown: 24 }],
   zoneExpanded: { head: false, tail: false, middle: false, bgm: false },
   zoneShown: { head: 24, tail: 24, middle: 24, bgm: 24 },
   params: {
@@ -81,7 +81,6 @@ const state = reactive({
     output_name_template: 'output_{序号}_{开头}_{结尾}',
     dedupe_enabled: true,
     random_seed: 20260905,
-    middle_count: 1,
     transition_mode: '不使用',
     transition_type: 'fade',
     transition_duration: 0.5,
@@ -119,7 +118,6 @@ const state = reactive({
   materialZones: [
     { kind: 'head', title: '开头素材库', hint: '片头视频', placeholder: '例如：D:\\素材\\开头', uploadable: true },
     { kind: 'tail', title: '结尾素材库', hint: '片尾视频', placeholder: '例如：D:\\素材\\结尾', uploadable: true },
-    { kind: 'middle', title: '中间素材池', hint: '可选，三段式拼接', placeholder: '可选：D:\\素材\\中间', uploadable: true },
     { kind: 'bgm', title: '背景音乐', hint: '可选', placeholder: '可选：音乐文件夹', uploadable: false },
   ],
 });
@@ -154,6 +152,7 @@ const progressPct = computed(() => {
   return Math.min(100, Math.round((state.job.current / state.job.total) * 100));
 });
 const logHtml = computed(() => escapeHtml(state.job.logs.join('\n')));
+const poolPickedCount = computed(() => state.middlePools.reduce((s, p) => s + p.items.length, 0));
 const resultRows = computed(() => {
   const rows = [];
   (state.job.success_items || []).forEach((it) => rows.push({
@@ -195,16 +194,20 @@ function toggleTheme() {
 
 /* ---------- 配置收集与回填 ---------- */
 function collectConfig() {
+  const activePools = state.middlePools
+    .filter((p) => p.folder && p.folder.trim())
+    .map((p) => ({ folder: p.folder.trim(), items: p.items.slice(), count: p.count }));
   return {
     head_folder: state.folders.head.trim(),
     tail_folder: state.folders.tail.trim(),
-    middle_folder: state.folders.middle.trim(),
+    middle_folder: activePools.length ? activePools[0].folder : state.folders.middle.trim(),
     output_folder: state.folders.output.trim(),
     fixed_head: state.fixed.head,
     fixed_tail: state.fixed.tail,
-    fixed_middle: state.middleSelected.length === 1 ? state.middleSelected[0] : '',
-    middle_items: state.middleSelected.slice(),
-    middle_count: state.params.middle_count,
+    fixed_middle: activePools.length ? activePools[0].items[0] || '' : '',
+    middle_items: activePools.length ? activePools[0].items : [],
+    middle_count: activePools.length ? activePools[0].count : 0,
+    middle_pools: activePools,
     ...state.params,
     bgm_folder: state.folders.bgm.trim(),
   };
@@ -220,8 +223,21 @@ function applyConfig(cfg) {
   state.fixed.head = cfg.fixed_head || '';
   state.fixed.tail = cfg.fixed_tail || '';
   state.fixed.middle = cfg.fixed_middle || '';
-  state.middleSelected = Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
-  if (!state.middleSelected.length && cfg.fixed_middle) state.middleSelected = [cfg.fixed_middle];
+  // 中间素材池：优先多池结构，否则回退旧单池字段
+  if (Array.isArray(cfg.middle_pools) && cfg.middle_pools.length) {
+    state.middlePools = cfg.middle_pools.slice(0, 5).map((pool, i) => ({
+      id: i + 1,
+      folder: pool.folder || '',
+      items: Array.isArray(pool.items) ? pool.items.slice() : [],
+      count: pool.count ?? 1,
+      files: [], expanded: false, shown: 24,
+    }));
+  } else {
+    const legacyItems = Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
+    if (!legacyItems.length && cfg.fixed_middle) legacyItems.push(cfg.fixed_middle);
+    const legacyCount = cfg.middle_count ?? 1;
+    state.middlePools = [{ id: 1, folder: cfg.middle_folder || '', items: legacyItems, count: legacyCount, files: [], expanded: false, shown: 24 }];
+  }
   const p = state.params;
   p.count = cfg.count ?? 10;
   p.workers = cfg.workers ?? 2;
@@ -230,7 +246,6 @@ function applyConfig(cfg) {
   p.output_name_template = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
   p.dedupe_enabled = cfg.dedupe_enabled !== false;
   p.random_seed = cfg.random_seed || 20260905;
-  p.middle_count = cfg.middle_count ?? 0;
   p.transition_mode = cfg.transition_mode || '不使用';
   p.transition_type = cfg.transition_type || 'fade';
   p.transition_duration = cfg.transition_duration || 0.5;
@@ -253,6 +268,10 @@ function applyConfig(cfg) {
 
 /* ---------- 素材扫描与详情 ---------- */
 async function scan(kind) {
+  if (kind === 'middle') {
+    state.middlePools.forEach((pool) => scanPool(pool));
+    return;
+  }
   const folder = state.folders[kind].trim();
   if (!folder) { state.materials[kind] = []; return; }
   try {
@@ -266,11 +285,66 @@ async function scan(kind) {
     state.materials[kind] = files.map((f) => existing.get(f.path) || enriched.find((e) => e.path === f.path) || {
       path: f.path, name: f.name, ok: true, thumbUrl: thumbUrl(f.path),
     });
-    if (kind === 'head' || kind === 'tail' || kind === 'middle') syncFixed(kind);
-    if (kind === 'middle') syncMiddleSelected();
+    if (kind === 'head' || kind === 'tail') syncFixed(kind);
   } catch (e) {
     showMsg('素材扫描失败：' + e.message, 'error');
   }
+}
+
+async function scanPool(pool) {
+  const folder = (pool.folder || '').trim();
+  if (!folder) { pool.files = []; return; }
+  try {
+    const q = new URLSearchParams({ middle: folder });
+    const data = await api('/api/scan?' + q.toString());
+    const files = data.middle || [];
+    const existing = new Map(pool.files.map((m) => [m.path, m]));
+    const newFiles = files.filter((f) => !existing.has(f.path));
+    const enriched = await enrichMaterials(newFiles);
+    pool.files = files.map((f) => existing.get(f.path) || enriched.find((e) => e.path === f.path) || {
+      path: f.path, name: f.name, ok: true, thumbUrl: thumbUrl(f.path),
+    });
+    // 过滤已失效的勾选项
+    const valid = new Set(pool.files.map((m) => m.path));
+    pool.items = pool.items.filter((p) => valid.has(p));
+  } catch (e) {
+    showMsg('中间素材池扫描失败：' + e.message, 'error');
+  }
+}
+
+function addMiddlePool() {
+  if (state.middlePools.length >= 5) { showMsg('最多添加 5 个中间素材池', 'error'); return; }
+  const nextId = state.middlePools.reduce((m, p) => Math.max(m, p.id), 0) + 1;
+  state.middlePools.push({ id: nextId, folder: '', items: [], count: 1, files: [], expanded: false, shown: 24 });
+  showMsg(`已添加中间素材池 ${nextId} 号`);
+}
+
+function removeMiddlePool(pool) {
+  if (state.middlePools.length <= 1) { showMsg('至少保留 1 个中间素材池', 'error'); return; }
+  state.middlePools = state.middlePools.filter((p) => p.id !== pool.id);
+  showMsg('已移除中间素材池');
+}
+
+function togglePoolItem(pool, path) {
+  const i = pool.items.indexOf(path);
+  if (i >= 0) {
+    pool.items.splice(i, 1);
+  } else {
+    if (pool.items.length >= 10) { showMsg('单个池固定素材最多 10 条', 'error'); return; }
+    pool.items.push(path);
+  }
+}
+
+function poolOrder(pool, path) {
+  const i = pool.items.indexOf(path);
+  return i >= 0 ? i + 1 : 0;
+}
+
+function togglePoolExpand(pool) {
+  pool.expanded = !pool.expanded;
+}
+function showPoolMore(pool) {
+  pool.shown += 24;
 }
 
 function thumbUrl(path) {
@@ -318,33 +392,11 @@ function syncFixed(kind) {
   if (state.fixed[kind] && !paths.includes(state.fixed[kind])) state.fixed[kind] = '';
 }
 
-function syncMiddleSelected() {
-  const paths = new Set(state.materials.middle.map((m) => m.path));
-  state.middleSelected = state.middleSelected.filter((p) => paths.has(p));
-}
-
 function toggleFixed(kind, path) {
   if (!['head', 'tail'].includes(kind)) return;
   state.fixed[kind] = state.fixed[kind] === path ? '' : path;
   const name = materialsName(kind);
   showMsg(state.fixed[kind] ? `已固定${name}` : `已取消固定${name}`);
-}
-
-function toggleMiddle(path) {
-  const i = state.middleSelected.indexOf(path);
-  if (i >= 0) {
-    state.middleSelected.splice(i, 1);
-    showMsg(`已移除中间素材（剩余 ${state.middleSelected.length} 条）`);
-  } else {
-    if (state.middleSelected.length >= 10) { showMsg('固定中间素材最多 10 条', 'error'); return; }
-    state.middleSelected.push(path);
-    showMsg(`已添加中间素材（共 ${state.middleSelected.length} 条，按勾选顺序插入）`);
-  }
-}
-
-function middleOrder(path) {
-  const i = state.middleSelected.indexOf(path);
-  return i >= 0 ? i + 1 : 0;
 }
 
 function toggleExpand(kind) {
@@ -354,10 +406,12 @@ function showMore(kind) {
   state.zoneShown[kind] += 24;
 }
 function expandAll() {
-  ['head', 'tail', 'middle', 'bgm'].forEach((k) => { state.zoneExpanded[k] = true; });
+  ['head', 'tail', 'bgm'].forEach((k) => { state.zoneExpanded[k] = true; });
+  state.middlePools.forEach((p) => { p.expanded = true; });
 }
 function collapseAll() {
-  ['head', 'tail', 'middle', 'bgm'].forEach((k) => { state.zoneExpanded[k] = false; });
+  ['head', 'tail', 'bgm'].forEach((k) => { state.zoneExpanded[k] = false; });
+  state.middlePools.forEach((p) => { p.expanded = false; });
 }
 
 function materialsName(kind) {
@@ -376,6 +430,22 @@ async function selectFolder(kind) {
     if (kind === 'output') { showMsg('输出路径已选择', 'success'); return; }
     scan(kind);
     if (kind === 'head' && !state.folders.output) state.folders.output = data.path.replace(/[\\/][^\\/]+$/, '') + '\\output';
+  } catch (e) {
+    showMsg('选择失败：' + e.message, 'error');
+  } finally {
+    state.selectBusy = false;
+  }
+}
+
+async function selectPoolFolder(pool) {
+  if (state.selectBusy) { showMsg('文件夹选择窗口已打开', 'info'); return; }
+  state.selectBusy = true;
+  try {
+    const data = await api('/api/select_folder?name=' + encodeURIComponent('middle_pool' + pool.id));
+    if (data.busy) { showMsg('文件夹选择窗口已打开', 'info'); return; }
+    if (!data.path) return;
+    pool.folder = data.path;
+    scanPool(pool);
   } catch (e) {
     showMsg('选择失败：' + e.message, 'error');
   } finally {
@@ -409,6 +479,37 @@ function pickFolderUpload(kind, input) {
       if (m && !state.folders.output) state.folders.output = data.path.replace(/(head|tail|middle)$/, 'output');
       showMsg(`上传完成 ${ok}/${files.length} 个文件`, 'success');
       scan(kind);
+    }
+  };
+  input.click();
+}
+
+function pickPoolUpload(pool) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = 'video/*';
+  const kind = 'middle_pool' + pool.id;
+  input.onchange = async () => {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    let ok = 0;
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      try {
+        await uploadFileXhr(kind, f, (pct) => {
+          showMsg(`正在上传 ${i + 1}/${files.length}：${f.name} ${pct}%`, 'info');
+        });
+        ok++;
+      } catch (e) {
+        showMsg(`上传失败：${f.name} ${e.message}`, 'error');
+      }
+    }
+    const data = await api('/api/upload_path?kind=' + encodeURIComponent(kind));
+    if (data.path) {
+      pool.folder = data.path;
+      showMsg(`上传完成 ${ok}/${files.length} 个文件`, 'success');
+      scanPool(pool);
     }
   };
   input.click();
@@ -683,10 +784,12 @@ createApp({
       ...Vue.toRefs(state),
       state, pageTitle, pageDesc,
       transitionOptions, watermarkScalePct, watermarkOpacityPct,
-      progressPct, logHtml, resultRows,
+      progressPct, logHtml, poolPickedCount, resultRows,
       toggleTheme, toggleChip,
       selectFolder, onPickFolderUpload, pickWatermark, dirPicker,
-      scan, toggleFixed, toggleMiddle, middleOrder, fileName, shortError, fmtEta, makeDownloadUrl,
+      scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
+      selectPoolFolder, pickPoolUpload, addMiddlePool, removeMiddlePool, scanPool,
+      togglePoolItem, poolOrder, togglePoolExpand, showPoolMore,
       toggleExpand, showMore, expandAll, collapseAll,
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
       loadHistory, clearHistory, loadFromHistory,

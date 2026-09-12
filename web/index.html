@@ -71,9 +71,10 @@
             <div class="btn-row" style="margin-bottom:12px">
               <button class="btn plain" @click="expandAll">全部展开</button>
               <button class="btn plain" @click="collapseAll">全部收起</button>
-              <span class="card-hint" v-if="middleSelected.length">已固定中间素材 {{ middleSelected.length }} 条</span>
+              <span class="card-hint" v-if="poolPickedCount">已固定中间素材 {{ poolPickedCount }} 条</span>
             </div>
-            <div class="card" v-for="zone in materialZones" :key="zone.kind">
+            <template v-for="zone in materialZones" :key="zone.kind">
+            <div class="card" v-if="zone.kind!=='middle'">
               <div class="card-title">
                 <span class="bar"></span>{{ zone.title }}
                 <span class="card-hint" style="font-weight:400">{{ zone.hint }}</span>
@@ -96,24 +97,18 @@
               <div v-if="zone.kind==='bgm'" class="card-hint" style="margin-top:6px">
                 音乐文件（MP3/WAV/M4A/FLAC/OGG），固定或随机配乐
               </div>
-              <div v-if="zone.kind==='middle'" class="card-hint" style="margin-top:6px">
-                点击素材可固定多条中间片段（按点击顺序插入头尾之间，最多 10 条）；未勾选时可在参数页设置随机抽取数量
-              </div>
 
               <div v-if="materials[zone.kind].length && zoneExpanded[zone.kind]">
                 <div class="material-grid">
                   <div class="material-card"
                        v-for="m in materials[zone.kind].slice(0, zoneShown[zone.kind])" :key="m.path"
-                       :class="{
-                         picked: zone.kind==='middle' ? middleSelected.includes(m.path) : fixed[zone.kind]===m.path,
-                         broken: !m.ok
-                       }"
-                       @click="zone.kind==='middle' ? toggleMiddle(m.path) : toggleFixed(zone.kind, m.path)">
+                       :class="{ picked: fixed[zone.kind]===m.path, broken: !m.ok }"
+                       @click="toggleFixed(zone.kind, m.path)">
                     <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
                          :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl = ''">
                     <div v-else class="empty-thumb">🎬</div>
                     <div v-if="!m.ok" class="broken-badge">损坏</div>
-                    <div class="pick-badge">{{ zone.kind==='middle' ? middleOrder(m.path) : '固定' }}</div>
+                    <div class="pick-badge">固定</div>
                     <div class="meta">
                       <div class="name" :title="m.name">{{ m.name }}</div>
                       <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
@@ -133,6 +128,68 @@
               </div>
               <div v-else class="empty" style="margin-top:12px">
                 选择或上传{{ zone.kind==='bgm' ? '音乐' : '素材' }}文件夹
+              </div>
+            </div>
+            </template>
+
+            <!-- 中间素材池（多池，按池顺序插入头尾之间） -->
+            <div class="card">
+              <div class="card-title">
+                <span class="bar"></span>中间素材池
+                <span class="card-hint" style="font-weight:400">多个池按顺序插入头尾之间</span>
+                <button class="btn plain" style="margin-left:auto;padding:2px 10px"
+                        @click="addMiddlePool" :disabled="middlePools.length>=5">
+                  + 添加素材池（{{ middlePools.length }}/5）
+                </button>
+              </div>
+
+              <div v-for="(pool, pi) in middlePools" :key="pool.id" class="pool-card">
+                <div class="pool-head">
+                  <span class="pool-title">池 {{ pi + 1 }}</span>
+                  <span class="card-hint" v-if="pool.items.length">已固定 {{ pool.items.length }} 条</span>
+                  <button v-if="middlePools.length > 1" class="btn plain danger" style="margin-left:auto"
+                          @click="removeMiddlePool(pool)">移除</button>
+                  <button class="btn plain" style="padding:2px 10px" @click="togglePoolExpand(pool)">
+                    {{ pool.expanded ? '收起' : '展开' }}
+                  </button>
+                </div>
+                <div class="folder-row">
+                  <input class="input input-path" :id="'input_pool_' + pool.id" placeholder="中间素材池文件夹"
+                         v-model="pool.folder" @change="scanPool(pool)">
+                  <span class="folder-count" v-if="pool.files.length">{{ pool.files.length }} 个</span>
+                  <button class="btn plain" @click="selectPoolFolder(pool)" :disabled="selectBusy">选择</button>
+                  <button class="btn soft" @click="pickPoolUpload(pool)">上传</button>
+                </div>
+                <div class="card-hint" style="margin-top:6px">
+                  勾选该池素材（最多 10 条，按勾选顺序插入）；未勾选时从该池随机抽取 {{ pool.count }} 条
+                </div>
+                <div v-if="pool.files.length && pool.expanded" style="margin-top:10px">
+                  <div class="material-grid">
+                    <div class="material-card"
+                         v-for="m in pool.files.slice(0, pool.shown)" :key="m.path"
+                         :class="{ picked: pool.items.includes(m.path), broken: !m.ok }"
+                         @click="togglePoolItem(pool, m.path)">
+                      <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
+                           :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl=''">
+                      <div v-else class="empty-thumb">🎬</div>
+                      <div v-if="!m.ok" class="broken-badge">损坏</div>
+                      <div v-if="poolOrder(pool, m.path)" class="pick-badge">{{ poolOrder(pool, m.path) }}</div>
+                      <div class="meta">
+                        <div class="name" :title="m.name">{{ m.name }}</div>
+                        <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
+                      </div>
+                    </div>
+                  </div>
+                  <button v-if="pool.files.length > pool.shown" class="btn plain" style="margin-top:10px"
+                          @click="showPoolMore(pool)">
+                    加载更多（已显示 {{ Math.min(pool.shown, pool.files.length) }}/{{ pool.files.length }}）
+                  </button>
+                </div>
+                <div v-else-if="pool.files.length" class="empty" style="margin-top:10px">
+                  {{ pool.files.length }} 个素材，点击「展开」查看
+                </div>
+                <div v-else-if="pool.folder" class="empty" style="margin-top:10px">该文件夹未识别到视频文件</div>
+                <div v-else class="empty" style="margin-top:10px">选择或上传中间素材文件夹</div>
               </div>
             </div>
 
@@ -219,16 +276,30 @@
             </div>
 
             <div class="card">
-              <div class="card-title"><span class="bar"></span>中间素材</div>
-              <div class="field">
-                <div class="field-label">随机中间片段数（未勾选固定素材时从中间池抽取）</div>
-                <div class="range-wrap">
-                  <input type="range" min="0" max="5" v-model.number="params.middle_count">
-                  <span class="range-val">{{ params.middle_count }} 条</span>
-                </div>
+              <div class="card-title">
+                <span class="bar"></span>中间素材
+                <button class="btn plain" style="margin-left:auto;padding:2px 10px"
+                        @click="addMiddlePool" :disabled="middlePools.length>=5">
+                  + 添加素材池（{{ middlePools.length }}/5）
+                </button>
               </div>
-              <div class="card-hint" style="margin-top:6px">
-                已在素材库勾选的固定中间素材（{{ middleSelected.length }} 条）优先按顺序插入；本设置只作用于未勾选时的随机抽取
+              <div v-for="(pool, pi) in middlePools" :key="pool.id" class="pool-card" style="margin-top:10px">
+                <div class="pool-head">
+                  <span class="pool-title">池 {{ pi + 1 }}</span>
+                  <span class="card-hint" v-if="pool.folder" style="margin-left:8px">{{ pool.folder }}</span>
+                  <button v-if="middlePools.length > 1" class="btn plain danger" style="margin-left:auto"
+                          @click="removeMiddlePool(pool)">移除</button>
+                </div>
+                <div class="field" style="margin:8px 0 0">
+                  <div class="field-label">未勾选时随机抽取条数</div>
+                  <div class="range-wrap">
+                    <input type="range" min="0" max="5" v-model.number="pool.count">
+                    <span class="range-val">{{ pool.count }} 条</span>
+                  </div>
+                </div>
+                <div class="card-hint" style="margin-top:4px">
+                  {{ pool.items.length ? '该池已固定 ' + pool.items.length + ' 条，按勾选顺序插入' : '该池未勾选固定素材，随机抽取时使用上方条数' }}
+                </div>
               </div>
             </div>
 
