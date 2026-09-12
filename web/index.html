@@ -326,7 +326,7 @@
                   <input class="input input-path" v-model="params.output_name_template"
                          placeholder="output_{序号}_{开头}_{结尾}">
                   <div class="card-hint" style="margin-top:4px">
-                    变量：{序号} {开头} {结尾} {中间} {日期}
+                    变量：{序号} {开头} {结尾} {中间} {日期}；模板不含 {序号} 时自动追加序号（如 我的视频_001），保证每条都导出
                   </div>
                 </div>
               </div>
@@ -338,6 +338,7 @@
                 </label>
                 <span class="card-hint" style="margin-left:10px">尽量降低重复组合；随机种子：</span>
                 <input class="input" style="width:120px;display:inline-block;margin-left:6px" type="number" v-model.number="params.random_seed">
+                <button class="btn plain" style="padding:2px 12px;margin-left:6px" @click="randomizeSeed" title="点击随机刷新种子">随机</button>
               </div>
             </div>
 

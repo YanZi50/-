@@ -189,6 +189,10 @@ function fmtEta(seconds) {
 }
 
 /* ---------- 主题 ---------- */
+function randomizeSeed() {
+  state.params.random_seed = Math.floor(Math.random() * 1e9);
+  showMsg('已随机刷新种子：' + state.params.random_seed, 'success');
+}
 function toggleTheme() {
   state.theme = state.theme === 'dark' ? 'light' : 'dark';
   localStorage.setItem('sppj_theme', state.theme);
@@ -812,7 +816,7 @@ createApp({
       state, pageTitle, pageDesc,
       transitionOptions, watermarkScalePct, watermarkOpacityPct,
       progressPct, logHtml, poolPickedCount, resultRows,
-      toggleTheme, toggleChip,
+      toggleTheme, toggleChip, randomizeSeed,
       selectFolder, onPickFolderUpload, pickWatermark, dirPicker,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
       selectPoolFolder, pickPoolUpload, addMiddlePool, removeMiddlePool, scanPool,

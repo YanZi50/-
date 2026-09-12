@@ -1014,6 +1014,10 @@ def render_output_name(
     result = template or "output_{序号}_{开头}_{结尾}"
     for key, value in values.items():
         result = result.replace(key, value)
+    if template and "{序号}" not in template:
+        # 模板不含序号时自动追加序号（如 我的视频_001）：否则多条输出同名，
+        # 会互相跳过只导出 1 条。追加后保证每条都导出且兼容断点续跑跳过逻辑。
+        result = f"{result}_{index:03d}"
     return clean(result) + ".mp4"
 
 
