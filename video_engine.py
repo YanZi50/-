@@ -119,7 +119,8 @@ def parse_duration(value: str) -> float:
     return int(h) * 3600 + int(m) * 60 + float(s)
 
 
-def probe_media(path: str) -> dict:
+def probe_media(path: str, require_video: bool = True) -> dict:
+    """探测媒体信息。require_video=False 时纯音频文件（如 BGM）也算正常。"""
     cmd = [
         _ffmpeg(),
         "-hide_banner",
@@ -161,7 +162,7 @@ def probe_media(path: str) -> dict:
         "height": height,
         "audio_start": audio_start,
         "audio_duration": audio_duration,
-        "ok": bool(has_video and duration > 0.05),
+        "ok": bool(duration > 0.05 and (has_video if require_video else (has_video or has_audio))),
     }
 
 
@@ -1052,9 +1053,10 @@ def precheck_materials(config: "JobConfig") -> dict:
     out: dict[str, list[dict]] = {}
     for kind, files in groups.items():
         items = []
+        is_audio = kind == "bgm"
         for path in files:
             try:
-                info = probe_media(path)
+                info = probe_media(path, require_video=not is_audio)
                 items.append(
                     {
                         "path": path,
@@ -1064,7 +1066,7 @@ def precheck_materials(config: "JobConfig") -> dict:
                         "has_audio": info.get("has_audio", False),
                         "width": info.get("width", 0),
                         "height": info.get("height", 0),
-                        "error": "" if info.get("ok", True) else "无法读取视频流",
+                        "error": "" if info.get("ok", True) else ("无法读取音频" if is_audio else "无法读取视频流"),
                     }
                 )
             except Exception as exc:
