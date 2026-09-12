@@ -231,7 +231,9 @@ class EngineV2Tests(unittest.TestCase):
         mid = self.temp / "middle"
         mid.mkdir()
         make_clip(self.head / "h.mp4", "blue")
+        make_clip(self.head / "h2.mp4", "green")
         make_clip(self.tail / "t.mp4", "red")
+        make_clip(self.tail / "t2.mp4", "yellow")
         for i in range(3):
             make_clip(mid / f"m{i}.mp4", "green")
         result = process_batch(

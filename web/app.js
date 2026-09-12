@@ -383,6 +383,12 @@ function thumbUrl(path) {
 async function enrichMaterials(files, kind = '', concurrency = 6) {
   const out = new Array(files.length);
   let next = 0;
+  // 按内容指纹标记重复素材（同指纹除首个外标 dup）
+  const seen = new Set();
+  for (const f of files) {
+    f._dup = f.fp ? seen.has(f.fp) : false;
+    if (f.fp) seen.add(f.fp);
+  }
   async function worker() {
     while (true) {
       const i = next++;
@@ -393,7 +399,7 @@ async function enrichMaterials(files, kind = '', concurrency = 6) {
         // BGM 为纯音频（无视频流），有音频流即正常；视频素材必须有视频流
         const ok = kind === 'bgm' ? (d.ok && (d.has_video || d.has_audio)) : (d.ok && d.has_video);
         out[i] = {
-          path: f.path, name: f.name, ok,
+          path: f.path, name: f.name, ok, dup: !!f._dup,
           thumbUrl: thumbUrl(f.path),
           duration: d.duration || 0,
           width: d.width || 0, height: d.height || 0,
@@ -402,7 +408,7 @@ async function enrichMaterials(files, kind = '', concurrency = 6) {
           resText: d.width && d.height ? d.width + '×' + d.height : '',
         };
       } catch (e) {
-        out[i] = { path: f.path, name: f.name, ok: false, thumbUrl: thumbUrl(f.path), durationText: '未知', resText: '' };
+        out[i] = { path: f.path, name: f.name, ok: false, dup: !!f._dup, thumbUrl: thumbUrl(f.path), durationText: '未知', resText: '' };
       }
     }
   }

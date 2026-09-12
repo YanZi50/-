@@ -111,6 +111,41 @@ def scan_audio(folder: str) -> list[str]:
     return items
 
 
+def media_fingerprint(path: str) -> str:
+    """轻量内容指纹：文件大小 + 头尾各 1MB 的 SHA256。
+    同内容素材（不同文件名/不同路径）会得到相同指纹，用于去重识别。"""
+    try:
+        p = Path(path)
+        size = p.stat().st_size
+        hasher = hashlib.sha256()
+        hasher.update(str(size).encode())
+        chunk = 1024 * 1024
+        with p.open("rb") as f:
+            head = f.read(chunk)
+            hasher.update(head)
+            if size > chunk:
+                f.seek(max(0, size - chunk))
+                tail = f.read(chunk)
+                hasher.update(tail)
+        return hasher.hexdigest()
+    except Exception:
+        # 读取失败（如占用/权限）时退化为按路径指纹，不影响功能
+        return "path:" + path.lower().replace("\\", "/")
+
+
+def dedupe_by_fp(files: list[str]) -> list[str]:
+    """按内容指纹去重，保留每个指纹的第一个文件。"""
+    seen: set[str] = set()
+    result: list[str] = []
+    for f in files:
+        fp = media_fingerprint(f)
+        if fp in seen:
+            continue
+        seen.add(fp)
+        result.append(f)
+    return result
+
+
 def parse_duration(value: str) -> float:
     match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", value)
     if not match:
@@ -804,17 +839,12 @@ def build_combinations(
     if fixed_head:
         unique = list(dict.fromkeys(tail_files))
         rng.shuffle(unique)
-        result = []
-        while len(result) < count:
-            result.extend(unique)
-        return [(fixed_head, tail) for tail in result[:count]]
+        # 组合数不足时不重复循环，用多少给多少（防止产出重复成片）
+        return [(fixed_head, tail) for tail in unique[:count]]
     if fixed_tail:
         unique = list(dict.fromkeys(head_files))
         rng.shuffle(unique)
-        result = []
-        while len(result) < count:
-            result.extend(unique)
-        return [(head, fixed_tail) for head in result[:count]]
+        return [(head, fixed_tail) for head in unique[:count]]
 
     pairs = [(h, t) for h in head_files for t in tail_files]
     if not pairs:
@@ -822,17 +852,10 @@ def build_combinations(
     if not dedupe_enabled:
         return [(rng.choice(head_files), rng.choice(tail_files)) for _ in range(count)]
 
-    if count <= len(pairs):
-        batch = list(pairs)
-        rng.shuffle(batch)
-        return batch[:count]
-
-    result = []
-    while len(result) < count:
-        batch = list(pairs)
-        rng.shuffle(batch)
-        result.extend(batch)
-    return result[:count]
+    batch = list(pairs)
+    rng.shuffle(batch)
+    # 组合数不足时返回全部可用组合，不循环复用（防止同一组合重复出片）
+    return batch[:count]
 
 
 @dataclass
@@ -964,17 +987,26 @@ def build_middle_pools(config: "JobConfig") -> list[dict]:
 
 
 def pick_middle_sequence(
-    pools: list[dict], index: int, random_seed: int
+    pools: list[dict], index: int, random_seed: int, exclude: Optional[list[str]] = None
 ) -> list[str]:
-    """按池顺序生成一条成片的中间片段序列：每池固定勾选优先，否则随机抽取 count 条。"""
+    """按池顺序生成一条成片的中间片段序列：每池固定勾选优先，否则随机抽取 count 条。
+    exclude：排除与开头/结尾/已选素材重复的文件（按路径与文件名）。"""
     seq: list[str] = []
+    excluded = set()
+    for p in (exclude or []):
+        excluded.add(p)
+        excluded.add(Path(p).name)
     for pi, pool in enumerate(pools):
         files = pool.get("files") or []
         if not files:
             continue
         items = [p for p in (pool.get("items") or []) if p in files]
         if items:
+            # 固定勾选是用户明确指定，不做排除
             seq.extend(items)
+            for p in items:
+                excluded.add(p)
+                excluded.add(Path(p).name)
             continue
         count = pool.get("count")
         if count is None:
@@ -983,9 +1015,15 @@ def pick_middle_sequence(
         if count <= 0:
             continue
         rng = random.Random(random_seed + index * 100 + pi)
-        shuffled = files[:]
-        rng.shuffle(shuffled)
-        seq.extend(shuffled[: min(count, len(shuffled))])
+        pool_files = [p for p in files if p not in excluded and Path(p).name not in excluded]
+        if not pool_files:
+            continue
+        rng.shuffle(pool_files)
+        picked = pool_files[: min(count, len(pool_files))]
+        seq.extend(picked)
+        for p in picked:
+            excluded.add(p)
+            excluded.add(Path(p).name)
     return seq
 
 
@@ -1026,6 +1064,8 @@ def render_output_name(
         "{结尾}": clean(Path(tail).stem),
         "{中间}": clean(Path(middle).stem) if middle else "无",
         "{日期}": time.strftime("%Y%m%d"),
+        "{时间}": time.strftime("%H%M%S"),
+        "{随机4位}": f"{random.randint(0, 9999):04d}",
     }
     result = template or "output_{序号}_{开头}_{结尾}"
     for key, value in values.items():
@@ -1191,10 +1231,10 @@ def process_batch(
     skip_existing: bool = True,
 ) -> BatchResult:
     result = BatchResult()
-    head_files = scan_videos(config.head_folder)
-    tail_files = scan_videos(config.tail_folder)
+    head_files = dedupe_by_fp(scan_videos(config.head_folder))
+    tail_files = dedupe_by_fp(scan_videos(config.tail_folder))
     middle_pools = build_middle_pools(config)
-    bgm_files = scan_audio(config.bgm_folder) if config.bgm_folder else []
+    bgm_files = dedupe_by_fp(scan_audio(config.bgm_folder)) if config.bgm_folder else []
     if not head_files:
         raise MediaError("开头文件夹中没有找到视频文件。")
     if not tail_files:
@@ -1228,6 +1268,9 @@ def process_batch(
     )
     if not combos:
         raise MediaError("没有可生成的素材组合。")
+    if len(combos) < count:
+        logger = _make_task_logger(log)
+        logger(f"素材组合数不足：设定 {count} 条，可用组合仅 {len(combos)} 条，已按全部可用组合生成（不会重复出片）。")
 
     output_dir = Path(config.output_folder or Path(config.head_folder).parent / "output")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1253,7 +1296,7 @@ def process_batch(
 
     if workers <= 1:
         for idx, (head, tail) in enumerate(combos, 1):
-            middle_items = pick_middle_sequence(middle_pools, idx, config.random_seed)
+            middle_items = pick_middle_sequence(middle_pools, idx, config.random_seed, exclude=[head, tail])
             first_middle = middle_items[0] if middle_items else None
             final_name = render_output_name(config.output_name_template, idx, head, tail, first_middle)
             final_path = output_dir / final_name
@@ -1271,7 +1314,7 @@ def process_batch(
     else:
         tasks = []
         for idx, (head, tail) in enumerate(combos, 1):
-            middle_items = pick_middle_sequence(middle_pools, idx, config.random_seed)
+            middle_items = pick_middle_sequence(middle_pools, idx, config.random_seed, exclude=[head, tail])
             first_middle = middle_items[0] if middle_items else None
             final_name = render_output_name(config.output_name_template, idx, head, tail, first_middle)
             final_path = output_dir / final_name

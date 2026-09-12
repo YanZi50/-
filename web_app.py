@@ -31,7 +31,9 @@ from video_engine import (
     BatchResult,
     JobConfig,
     MediaError,
+    dedupe_by_fp,
     get_thumbnail,
+    media_fingerprint,
     precheck_materials,
     process_batch,
     process_failed_items,
@@ -407,10 +409,10 @@ class Handler(BaseHTTPRequestHandler):
             bgm_files = scan_audio(bgm)
             self._send_json(
                 {
-                    "head": [{"name": Path(p).name, "path": p} for p in head_files],
-                    "tail": [{"name": Path(p).name, "path": p} for p in tail_files],
-                    "middle": [{"name": Path(p).name, "path": p} for p in middle_files],
-                    "bgm": [{"name": Path(p).name, "path": p} for p in bgm_files],
+                    "head": [{"name": Path(p).name, "path": p, "fp": media_fingerprint(p)} for p in head_files],
+                    "tail": [{"name": Path(p).name, "path": p, "fp": media_fingerprint(p)} for p in tail_files],
+                    "middle": [{"name": Path(p).name, "path": p, "fp": media_fingerprint(p)} for p in middle_files],
+                    "bgm": [{"name": Path(p).name, "path": p, "fp": media_fingerprint(p)} for p in bgm_files],
                 }
             )
             return

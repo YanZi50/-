@@ -105,6 +105,7 @@
                          :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl = ''">
                     <div v-else class="empty-thumb">🎬</div>
                     <div v-if="!m.ok" class="broken-badge">损坏</div>
+                    <div v-if="m.dup" class="dup-badge">重复</div>
                     <div class="pick-badge">固定</div>
                     <div class="meta">
                       <div class="name" :title="m.name">{{ m.name }}</div>
@@ -169,6 +170,7 @@
                            :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl=''">
                       <div v-else class="empty-thumb">🎬</div>
                       <div v-if="!m.ok" class="broken-badge">损坏</div>
+                      <div v-if="m.dup" class="dup-badge">重复</div>
                       <div v-if="poolOrder(pool, m.path)" class="pick-badge">{{ poolOrder(pool, m.path) }}</div>
                       <div class="meta">
                         <div class="name" :title="m.name">{{ m.name }}</div>
@@ -223,6 +225,7 @@
                          :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl = ''">
                     <div v-else class="empty-thumb">🎬</div>
                     <div v-if="!m.ok" class="broken-badge">损坏</div>
+                    <div v-if="m.dup" class="dup-badge">重复</div>
                     <div class="pick-badge">固定</div>
                     <div class="meta">
                       <div class="name" :title="m.name">{{ m.name }}</div>
@@ -322,7 +325,7 @@
                   <input class="input input-path" v-model="params.output_name_template"
                          placeholder="output_{序号}_{开头}_{结尾}">
                   <div class="card-hint" style="margin-top:4px">
-                    变量：{序号} {开头} {结尾} {中间} {日期}；模板不含 {序号} 时自动追加序号（如 我的视频_001），保证每条都导出
+                    变量：{序号} {开头} {结尾} {中间} {日期} {时间} {随机4位}；模板不含 {序号} 时自动追加序号（如 我的视频_001），保证每条都导出
                   </div>
                 </div>
               </div>
