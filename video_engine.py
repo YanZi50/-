@@ -68,7 +68,8 @@ def _file_fingerprint(path: str, extra: str = "") -> str:
 
 
 def _norm_cache_path(src: str, width: int, height: int, has_audio: bool, normalize_audio: bool) -> Path:
-    key = _file_fingerprint(src, f"norm|{width}x{height}|{has_audio}|{normalize_audio}")
+    # normv2：音频处理加入 aresample=async=1:first_pts=0 强制音画对齐，旧缓存（normv1）作废
+    key = _file_fingerprint(src, f"normv2|{width}x{height}|{has_audio}|{normalize_audio}")
     folder = cache_dir() / "norm"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / f"{key}.mp4"
@@ -136,12 +137,23 @@ def probe_media(path: str) -> dict:
     vm = re.search(r"Video:\s*\S+.*?(\d{2,5})x(\d{2,5})", text)
     if vm:
         width, height = int(vm.group(1)), int(vm.group(2))
+    audio_start = 0.0
+    audio_duration = 0.0
+    am = re.search(
+        r"Stream #\d+:\d+[^\n]*Audio:(?:(?!Stream #)[\s\S])*?Start:\s*([\d.]+)[^\n]*Duration:\s*([\d.]+)",
+        text,
+    )
+    if am:
+        audio_start = float(am.group(1))
+        audio_duration = float(am.group(2))
     return {
         "duration": duration or 1.0,
         "has_audio": has_audio,
         "has_video": has_video,
         "width": width,
         "height": height,
+        "audio_start": audio_start,
+        "audio_duration": audio_duration,
         "ok": bool(has_video and duration > 0.05),
     }
 
@@ -234,10 +246,16 @@ def normalize_clip(
     ]
     if has_audio:
         args += ["-map", "0:a:0"]
+        # 音画对齐：
+        # 1) asetpts=PTS-STARTPTS：把音频流起点归零（原素材音频 PTS 偏移/录制缺口
+        #    导致声音比画面晚开始，内容整体平移对齐，这是音画不同步的主因）；
+        # 2) aresample=async=1:first_pts=0：修正采样节奏漂移/微小抖动。
+        af = "asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0"
+        if normalize_audio:
+            af = f"loudnorm=I=-16:TP=-1.5:LRA=11,{af}"
+        args += ["-af", af]
     else:
         args += ["-map", "1:a:0"]
-    if has_audio and normalize_audio:
-        args += ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]
     args += [
         "-c:v",
         "libx264",
@@ -284,9 +302,12 @@ def concat_two(
     if can_transition:
         duration = min(transition_duration, head_duration - 0.2, tail_duration - 0.2)
         offset = head_duration - duration
+        # xfade 在 ffmpeg 7.1 会把输出自动协商为 yuv444p，末尾强制回 yuv420p
+        # （体积小、兼容性好），否则成片体积明显变大。
         fc = (
-            f"[0:v][1:v]xfade=transition={transition_type}:duration={duration:.3f}:offset={offset:.3f}[v];"
-            f"[0:a][1:a]acrossfade=d={duration:.3f}:c1=tri:c2=tri[a]"
+            f"[0:v][1:v]xfade=transition={transition_type}:duration={duration:.3f}:offset={offset:.3f}[vraw];"
+            f"[0:a][1:a]acrossfade=d={duration:.3f}:c1=tri:c2=tri[a];"
+            f"[vraw]format=yuv420p[v]"
         )
     else:
         fc = "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]"
@@ -332,12 +353,13 @@ def concat_three(
     if can_transition:
         d = min(transition_duration, *(x - 0.2 for x in durations))
         o1 = durations[0] - d
-        o2 = durations[0] + durations[1] - d
+        o2 = durations[0] + durations[1] - 2 * d
         fc = (
             f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o1:.3f}[v1];"
-            f"[v1][2:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o2:.3f}[v];"
+            f"[v1][2:v]xfade=transition={transition_type}:duration={d:.3f}:offset={o2:.3f}[vraw];"
             f"[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1];"
-            f"[a1][2:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a]"
+            f"[a1][2:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a];"
+            f"[vraw]format=yuv420p[v]"
         )
     else:
         fc = "[0:v][0:a][1:v][1:a][2:v][2:a]concat=n=3:v=1:a=1[v][a]"
@@ -399,16 +421,24 @@ def concat_chain(
     )
     if can_transition:
         d = min(transition_duration, *(x - 0.2 for x in durations))
-        v_parts = [f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={durations[0] - d:.3f}[v1]"]
-        for i in range(1, n - 1):
-            off = sum(durations[: i + 1]) - d
+        # 链式 xfade：第 i 个 xfade 的输入是前 i 段拼接输出，其时长已减去 i 个转场重叠，
+        # offset 必须用递推的"当前拼接输出时长 - d"，否则 offset 超出输入时长会被 ffmpeg 截断成片。
+        v_parts: list[str] = []
+        acc = durations[0]
+        for i in range(n - 1):
+            off = acc - d
             out_label = "[v]" if i == n - 2 else f"[v{i + 1}]"
-            v_parts.append(f"[v{i}][{i + 1}:v]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
+            if i == 0:
+                v_parts.append(f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
+            else:
+                v_parts.append(f"[v{i}][{i + 1}:v]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
+            acc = off + durations[i + 1]
         a_parts = [f"[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1]"]
         for i in range(1, n - 1):
             out_label = "[a]" if i == n - 2 else f"[a{i + 1}]"
             a_parts.append(f"[a{i}][{i + 1}:a]acrossfade=d={d:.3f}:c1=tri:c2=tri{out_label}")
-        fc = ";".join(v_parts + a_parts)
+        # xfade 在 ffmpeg 7.1 会把输出自动协商为 yuv444p，末尾强制回 yuv420p
+        fc = ";".join(v_parts + a_parts) + ";[v]format=yuv420p[v]"
     else:
         streams = []
         for i in range(n):
@@ -1299,7 +1329,10 @@ def _process_one_combo(
         )
 
         clips = [head_norm]
-        durations = [head_info["duration"]]
+        # 转场 offset 必须以归一化后文件的实际时长为依据（-shortest 等会使
+        # 原素材 probe 时长与归一化文件存在偏差），否则 xfade 过渡点与
+        # acrossfade 边界错位、音画不同步且随片段数累积。
+        durations = [probe_media(head_norm)["duration"]]
         for i, middle in enumerate(middle_items, 1):
             middle_info = probe_media(middle)
             middle_norm = str(tempdir / f"middle_norm_{i}.mp4")
@@ -1308,9 +1341,9 @@ def _process_one_combo(
                 cancel_event, pause_event, log, config.normalize_audio,
             )
             clips.append(middle_norm)
-            durations.append(middle_info["duration"])
+            durations.append(probe_media(middle_norm)["duration"])
         clips.append(tail_norm)
-        durations.append(tail_info["duration"])
+        durations.append(probe_media(tail_norm)["duration"])
 
         n_clips = len(clips)
         if n_clips == 2:

@@ -1,10 +1,13 @@
+import re
 import shutil
+import subprocess
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 
 from PIL import Image
+from imageio_ffmpeg import get_ffmpeg_exe
 
 from video_engine import (
     JobConfig,
@@ -18,6 +21,50 @@ from video_engine import (
     probe_media,
 )
 from tests.test_core import make_clip, make_clip_with_audio
+
+FFMPEG = get_ffmpeg_exe()
+
+
+def make_clip_with_audio_delayed(
+    path: Path, color: str = "blue", duration: float = 2.0, delay: float = 0.5
+) -> None:
+    """构造音画不同步素材（保留供扩展验证）：音频内容整体后移 delay 秒。"""
+    make_clip_offset_audio(path, color, duration, delay)
+
+
+def make_clip_offset_audio(
+    path: Path, color: str = "blue", duration: float = 2.0, delay: float = 0.5
+) -> None:
+    """构造音画不同步素材：音频内容整体后移 delay 秒（音频 PTS 起点非 0）。"""
+    subprocess.run(
+        [
+            FFMPEG,
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={color}:size=320x480:duration={duration}:r=30",
+            "-f",
+            "lavfi",
+            "-i",
+            f"sine=frequency=440:duration={duration}",
+            "-filter_complex",
+            f"[1:a]asetpts=PTS+{delay}/TB[a]",
+            "-map",
+            "0:v",
+            "-map",
+            "[a]",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            str(path),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 class EngineV2Tests(unittest.TestCase):
@@ -306,6 +353,82 @@ class EngineV2Tests(unittest.TestCase):
                 self._config(count=1, middle_pools=pools),
                 threading.Event(), threading.Event(),
             )
+
+    def test_normalize_keeps_av_present(self) -> None:
+        """归一化不破坏音画：正常同步素材归一化后音视频齐全、时长一致（-shortest 同步截断）。"""
+        src = self.temp / "src.mp4"
+        make_clip_with_audio(src, "blue", 2)
+        dst = str(self.temp / "norm.mp4")
+        before = probe_media(str(src))
+        normalize_clip(
+            src, dst, 1080, 1920, before["duration"], before["has_audio"],
+            threading.Event(), threading.Event(),
+        )
+        info = probe_media(dst)
+        self.assertTrue(info["has_video"] and info["has_audio"])
+        self.assertLess(abs(info["duration"] - 2.0), 0.25, "归一化后时长应保持")
+
+    def test_concat_av_sync_duration(self) -> None:
+        """转场链音画同步的核心：xfade/acrossfade 的过渡点都基于归一化后真实时长，
+        成片时长应精确等于 sum(真实时长) - 转场重叠（偏差 < 0.15s）。"""
+        make_clip_with_audio(self.head / "h.mp4", "blue", 2)
+        make_clip_with_audio(self.tail / "t.mp4", "red", 2)
+        mid = self.temp / "middle"
+        mid.mkdir()
+        make_clip_with_audio(mid / "m.mp4", "green", 2)
+        result = process_batch(
+            self._config(
+                count=1,
+                middle_folder=str(mid),
+                middle_items=[str(mid / "m.mp4")],
+                transition_mode="固定", transition_type="fade", transition_duration=0.4,
+            ),
+            threading.Event(), threading.Event(),
+        )
+        self.assertEqual(result.success, 1)
+        info = probe_media(str(Path(result.success_items[0]["output"])))
+        self.assertTrue(info["has_video"] and info["has_audio"])
+        expected = 2.0 * 3 - 0.4 * 2  # 三段各 2s，两个 0.4s 转场重叠
+        self.assertLess(abs(info["duration"] - expected), 0.15,
+                        "成片时长应精确等于标称拼接时长（音视频过渡点一致）")
+
+    def test_concat_chain_four_segments_duration(self) -> None:
+        """4 段链式转场回归：时长应精确 = sum(真实时长) - 3×转场。
+        修复前 offset 递推少减转场重叠，offset 超出输入时长被 ffmpeg 截断（成片变短）。"""
+        make_clip_with_audio(self.head / "h.mp4", "blue", 2)
+        make_clip_with_audio(self.tail / "t.mp4", "red", 2)
+        mid = self.temp / "middle"
+        mid.mkdir()
+        make_clip_with_audio(mid / "m1.mp4", "green", 2)
+        make_clip_with_audio(mid / "m2.mp4", "yellow", 2)
+        result = process_batch(
+            self._config(
+                count=1,
+                middle_folder=str(mid),
+                middle_items=[str(mid / "m1.mp4"), str(mid / "m2.mp4")],
+                transition_mode="固定", transition_type="fade", transition_duration=0.5,
+            ),
+            threading.Event(), threading.Event(),
+        )
+        self.assertEqual(result.success, 1)
+        info = probe_media(str(Path(result.success_items[0]["output"])))
+        expected = 2.0 * 4 - 0.5 * 3
+        self.assertLess(abs(info["duration"] - expected), 0.2,
+                        f"4 段成片时长应为 {expected}s，实际 {info['duration']}s（offset 递推错误会截断成片）")
+
+    def test_concat_copy_keeps_av_sync(self) -> None:
+        """无转场流复制路径：归一化对齐后，流复制拼接应保持音画同步。"""
+        make_clip_with_audio(self.head / "h.mp4", "blue", 2)
+        make_clip_with_audio(self.tail / "t.mp4", "red", 2)
+        result = process_batch(
+            self._config(count=1, transition_mode="不使用"),
+            threading.Event(), threading.Event(),
+        )
+        self.assertEqual(result.success, 1)
+        out = str(Path(result.success_items[0]["output"]))
+        info = probe_media(out)
+        self.assertTrue(info["has_video"] and info["has_audio"])
+        self.assertLess(abs(info["duration"] - 4.0), 0.25, "无转场成片时长应为两段之和")
 
 
 if __name__ == "__main__":
