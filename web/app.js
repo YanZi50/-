@@ -18,6 +18,22 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+const dedupeLevels = [
+  { value: 'off', label: '关闭' },
+  { value: 'light', label: '轻度' },
+  { value: 'deep', label: '深度' },
+];
+const dedupeOptions = [
+  { key: 'visual', name: '画面微调', desc: '亮度/对比度/饱和度 ±5-10%，随机裁切缩放' },
+  { key: 'segment', name: '片段差异化', desc: '随机入点偏移、素材顺序、插帧、随机转场' },
+  { key: 'audio', name: '音频差异化', desc: 'BGM 随机起播位置、轻微变速' },
+];
+const dedupeLevelHint = {
+  off: '不做差异化，每条成片内容一致（适合单条投放）',
+  light: '画面与音频轻微扰动，成片观感基本不变（适合少量版本）',
+  deep: '片段级差异化（入点偏移/顺序/插帧/转场随机），每条结构不同（适合批量投放）',
+};
+
 const transitionOptions = [
   { value: 'fade', label: '淡入淡出' },
   { value: 'dissolve', label: '溶解' },
@@ -85,6 +101,9 @@ const state = reactive({
     duration_mode: '不限制',
     output_name_template: 'output_{序号}_{开头}_{结尾}',
     dedupe_enabled: true,
+    dedupe_level: 'off',
+    dedupe_options: { visual: true, segment: true, audio: true },
+    dedupe_versions: 1,
     random_seed: 20260905,
     transition_mode: '不使用',
     transition_type: 'fade',
@@ -272,6 +291,9 @@ function applyConfig(cfg) {
   p.duration_mode = cfg.duration_mode || '不限制';
   p.output_name_template = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
   p.dedupe_enabled = cfg.dedupe_enabled !== false;
+  p.dedupe_level = cfg.dedupe_level || 'off';
+  p.dedupe_options = Object.assign({ visual: true, segment: true, audio: true }, cfg.dedupe_options || {});
+  p.dedupe_versions = Math.max(1, Math.min(5, cfg.dedupe_versions || 1));
   p.random_seed = cfg.random_seed || 20260905;
   p.transition_mode = cfg.transition_mode || '不使用';
   p.transition_type = cfg.transition_type || 'fade';
@@ -800,7 +822,7 @@ createApp({
     return {
       ...Vue.toRefs(state),
       state, pageTitle, pageDesc,
-      transitionOptions, watermarkScalePct, watermarkOpacityPct,
+      transitionOptions, dedupeLevels, dedupeOptions, dedupeLevelHint, watermarkScalePct, watermarkOpacityPct,
       progressPct, logHtml, poolPickedCount, resultRows,
       toggleTheme, toggleChip, randomizeSeed,
       selectFolder, pickWatermark,

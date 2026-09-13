@@ -33,6 +33,10 @@
           </div>
           <div class="step-item" :class="{active: step===3}" @click="step=3">
             <span class="step-num">3</span>
+            <span>去重</span>
+          </div>
+          <div class="step-item" :class="{active: step===4}" @click="step=4">
+            <span class="step-num">4</span>
             <span>生成与结果</span>
           </div>
         </nav>
@@ -60,7 +64,7 @@
             </div>
             <div class="btn-row">
               <button v-if="step>1" class="btn plain" @click="step--">← 上一步</button>
-              <button v-if="step<3" class="btn" @click="step++">下一步 →</button>
+              <button v-if="step<4" class="btn" @click="step++">下一步 →</button>
             </div>
           </div>
 
@@ -549,8 +553,47 @@
             </div>
           </section>
 
-          <!-- ================= 步骤 3：生成 ================= -->
+          <!-- ================= 步骤 3：去重 ================= -->
           <section v-show="step===3">
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>去重差异化</div>
+              <div class="card-hint" style="margin-bottom:10px">
+                平台按内容指纹（画面/音频/结构）判定重复视频。开启差异化后，每条成片在画面、片段、音频上产生合理差异，降低同批投放被判重概率。
+              </div>
+
+              <div class="field">
+                <div class="field-label">差异化强度</div>
+                <div class="chip-row">
+                  <button v-for="lv in dedupeLevels" :key="lv.value" class="chip" :class="{on: params.dedupe_level===lv.value}"
+                          @click="params.dedupe_level=lv.value">{{ lv.label }}</button>
+                </div>
+                <div class="card-hint" style="margin-top:6px">{{ dedupeLevelHint }}</div>
+              </div>
+
+              <div class="field">
+                <div class="field-label">差异化维度（可多选）</div>
+                <div class="opt-grid">
+                  <label class="opt-item" v-for="o in dedupeOptions" :key="o.key">
+                    <input type="checkbox" :disabled="params.dedupe_level==='off'" v-model="params.dedupe_options[o.key]">
+                    <span class="opt-name">{{ o.name }}</span>
+                    <span class="opt-desc">{{ o.desc }}</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-label">一键多版本（每条出 N 个差异化版本）</div>
+                <div class="range-wrap">
+                  <input type="range" min="1" max="5" step="1" v-model.number="params.dedupe_versions">
+                  <span class="range-val">{{ params.dedupe_versions }} 版</span>
+                </div>
+                <div class="card-hint" style="margin-top:6px">版本数 × 出片数量 = 实际生成条数（如 10 条 × 2 版 = 20 条）。各版本差异化参数不同，投放素材互不重复。</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ================= 步骤 4：生成 ================= -->
+          <section v-show="step===4">
             <div class="card">
               <div class="card-title"><span class="bar"></span>任务控制</div>
               <!-- 断点续跑：上次任务中断提示 -->

@@ -344,6 +344,65 @@ def normalize_clip(
     shutil.copy2(cached, dst)
 
 
+def dedupe_delta(level: str, options: dict, seed: int) -> dict:
+    """按强度/选项/种子确定性生成一条成片的差异化参数。
+    level=off 或空参数时返回空 dict（不启用差异化）。"""
+    if level not in {"light", "deep"}:
+        return {}
+    opts = options or {}
+    rng = random.Random(seed)
+    d: dict = {}
+    if opts.get("visual"):
+        amp = 0.05 if level == "light" else 0.10
+        d["visual"] = True
+        d["brightness"] = round(rng.uniform(-amp, amp), 4)
+        d["contrast"] = round(rng.uniform(1 - amp, 1 + amp), 4)
+        d["saturation"] = round(rng.uniform(1 - amp, 1 + amp), 4)
+        zoom = round(rng.uniform(1.0, 1.03 if level == "light" else 1.08), 4)
+        d["zoom"] = zoom
+        if zoom > 1.0:
+            # 保守偏移范围（≤ 帧宽的 (zoom-1) 倍，任何分辨率都不会超出）
+            d["crop_x"] = rng.randint(0, max(1, int(1000 * (zoom - 1))))
+            d["crop_y"] = rng.randint(0, max(1, int(1000 * (zoom - 1))))
+    if opts.get("segment"):
+        d["offset"] = round(rng.uniform(0.05, 0.25 if level == "light" else 0.45), 3)
+        d["random_transition"] = level == "deep"
+    if opts.get("audio"):
+        d["bgm_shift_seed"] = seed + 999
+    if d.get("random_transition"):
+        # 深度差异化：确定性生成该组合的随机转场（类型+时长）
+        types = ["fade", "dissolve", "slideleft", "slideright", "wipeleft", "wiperight",
+                 "circleopen", "circleclose", "smoothleft", "smoothright", "zoomin", "fadeblack"]
+        trng = random.Random(seed + 31)
+        d["transition"] = trng.choice(types)
+        d["transition_duration"] = round(trng.uniform(0.3, 0.8), 3)
+    return d
+
+
+def _prefilter_strings(delta: dict, i: int) -> tuple[str, str]:
+    """为第 i 个输入生成差异化前置滤镜（视频/音频）。
+    返回 (vf, af)；无扰动时返回 ('', '')。
+    注：入点偏移不走滤镜（trim+xfade 在 ffmpeg 7.1 报 -22），改由输入级 -ss 实现。"""
+    if not delta:
+        return "", ""
+    vf_parts: list[str] = []
+    af_parts: list[str] = []
+    if delta.get("visual"):
+        vf_parts.append(
+            f"eq=brightness={delta['brightness']:.4f}:contrast={delta['contrast']:.4f}:saturation={delta['saturation']:.4f}"
+        )
+        zoom = float(delta.get("zoom") or 1.0)
+        if zoom > 1.0:
+            # crop 宽高必须为偶数（yuv420p），否则 ffmpeg 报 -22
+            x_even = int(delta.get("crop_x", 0)) & ~1
+            y_even = int(delta.get("crop_y", 0)) & ~1
+            vf_parts.append(
+                f"scale=iw*{zoom:.4f}:ih*{zoom:.4f},"
+                f"crop=trunc(iw/{zoom:.4f}/2)*2:trunc(ih/{zoom:.4f}/2)*2:{x_even}:{y_even}"
+            )
+    return ",".join(vf_parts), ",".join(af_parts)
+
+
 def concat_two(
     head: str,
     tail: str,
@@ -355,8 +414,32 @@ def concat_two(
     transition_type: Optional[str] = None,
     transition_duration: float = 0.5,
     log: Optional[Callable[[str], None]] = None,
+    delta: Optional[dict] = None,
+    ss: Optional[list[float]] = None,
 ) -> None:
-    args = [_ffmpeg(), "-y", "-i", head, "-i", tail]
+    offsets = ss or [0.0, 0.0]
+    args = [_ffmpeg(), "-y"]
+    for off, path in zip(offsets, [head, tail]):
+        if off > 0:
+            args += ["-ss", f"{off:.3f}"]
+        args += ["-i", path]
+    pre = []
+    v0, a0 = _prefilter_strings(delta or {}, 0)
+    v1, a1 = _prefilter_strings(delta or {}, 1)
+    src_v = ["0:v", "1:v"]
+    src_a = ["0:a", "1:a"]
+    if v0:
+        pre.append(f"[0:v]{v0}[v0p]")
+        src_v[0] = "v0p"
+    if a0:
+        pre.append(f"[0:a]{a0}[a0p]")
+        src_a[0] = "a0p"
+    if v1:
+        pre.append(f"[1:v]{v1}[v1p]")
+        src_v[1] = "v1p"
+    if a1:
+        pre.append(f"[1:a]{a1}[a1p]")
+        src_a[1] = "a1p"
     can_transition = (
         transition_type
         and head_duration >= transition_duration + 0.2
@@ -368,12 +451,14 @@ def concat_two(
         # xfade 在 ffmpeg 7.1 会把输出自动协商为 yuv444p，末尾强制回 yuv420p
         # （体积小、兼容性好），否则成片体积明显变大。
         fc = (
-            f"[0:v][1:v]xfade=transition={transition_type}:duration={duration:.3f}:offset={offset:.3f}[vraw];"
-            f"[0:a][1:a]acrossfade=d={duration:.3f}:c1=tri:c2=tri[a];"
+            f"[{src_v[0]}][{src_v[1]}]xfade=transition={transition_type}:duration={duration:.3f}:offset={offset:.3f}[vraw];"
+            f"[{src_a[0]}][{src_a[1]}]acrossfade=d={duration:.3f}:c1=tri:c2=tri[a];"
             f"[vraw]format=yuv420p[v]"
         )
     else:
-        fc = "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]"
+        fc = f"[{src_v[0]}][{src_a[0]}][{src_v[1]}][{src_a[1]}]concat=n=2:v=1:a=1[v][a]"
+    if pre:
+        fc = ";".join(pre) + ";" + fc
     args += [
         "-filter_complex",
         fc,
@@ -465,18 +550,36 @@ def concat_chain(
     transition_type: Optional[str] = None,
     transition_duration: float = 0.5,
     log: Optional[Callable[[str], None]] = None,
+    delta: Optional[dict] = None,
+    ss: Optional[list[float]] = None,
 ) -> None:
-    """通用 N 片段拼接：转场可用时链式 xfade，否则 concat 滤镜硬接。"""
+    """通用 N 片段拼接：转场可用时链式 xfade，否则 concat 滤镜硬接。
+    delta：差异化参数（画面微调），并入拼接链不增加转码次数。
+    ss：每个输入的入点偏移（输入级 -ss，兼容 xfade）。"""
     n = len(clips)
     if n < 2:
         raise MediaError("拼接至少需要两个片段。")
     if n == 2:
         concat_two(clips[0], clips[1], dst, durations[0], durations[1],
-                   cancel_event, pause_event, transition_type, transition_duration, log)
+                   cancel_event, pause_event, transition_type, transition_duration, log, delta, ss)
         return
     inputs: list[str] = []
-    for clip in clips:
+    for i, clip in enumerate(clips):
+        if ss and i < len(ss) and ss[i] > 0:
+            inputs += ["-ss", f"{ss[i]:.3f}"]
         inputs += ["-i", clip]
+    # 差异化前置滤镜：每个输入流独立处理，输出替换原引用标签
+    pre: list[str] = []
+    src_v = [f"{i}:v" for i in range(n)]
+    src_a = [f"{i}:a" for i in range(n)]
+    for i in range(n):
+        vf, af = _prefilter_strings(delta or {}, i)
+        if vf:
+            pre.append(f"[{i}:v]{vf}[v{i}p]")
+            src_v[i] = f"v{i}p"
+        if af:
+            pre.append(f"[{i}:a]{af}[a{i}p]")
+            src_a[i] = f"a{i}p"
     can_transition = (
         transition_type
         and len(durations) == n
@@ -492,21 +595,23 @@ def concat_chain(
             off = acc - d
             out_label = "[v]" if i == n - 2 else f"[v{i + 1}]"
             if i == 0:
-                v_parts.append(f"[0:v][1:v]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
+                v_parts.append(f"[{src_v[0]}][{src_v[1]}]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
             else:
-                v_parts.append(f"[v{i}][{i + 1}:v]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
+                v_parts.append(f"[v{i}][{src_v[i + 1]}]xfade=transition={transition_type}:duration={d:.3f}:offset={off:.3f}{out_label}")
             acc = off + durations[i + 1]
-        a_parts = [f"[0:a][1:a]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1]"]
+        a_parts = [f"[{src_a[0]}][{src_a[1]}]acrossfade=d={d:.3f}:c1=tri:c2=tri[a1]"]
         for i in range(1, n - 1):
             out_label = "[a]" if i == n - 2 else f"[a{i + 1}]"
-            a_parts.append(f"[a{i}][{i + 1}:a]acrossfade=d={d:.3f}:c1=tri:c2=tri{out_label}")
+            a_parts.append(f"[a{i}][{src_a[i + 1]}]acrossfade=d={d:.3f}:c1=tri:c2=tri{out_label}")
         # xfade 在 ffmpeg 7.1 会把输出自动协商为 yuv444p，末尾强制回 yuv420p
         fc = ";".join(v_parts + a_parts) + ";[v]format=yuv420p[v]"
     else:
         streams = []
         for i in range(n):
-            streams += [f"[{i}:v]", f"[{i}:a]"]
+            streams += [f"[{src_v[i]}]", f"[{src_a[i]}]"]
         fc = "".join(streams) + f"concat=n={n}:v=1:a=1[v][a]"
+    if pre:
+        fc = ";".join(pre) + ";" + fc
     args = (
         [_ffmpeg(), "-y"]
         + inputs
@@ -587,8 +692,13 @@ def mix_bgm(
     ducking: bool = False,
     bgm_duration: float = 0.0,
     audio_volume: float = 1.0,
+    bgm_shift: float = 0.0,
 ) -> None:
-    bgm_chain = f"[1:a]volume={volume:.2f}"
+    shift = max(0.0, float(bgm_shift or 0.0))
+    if shift > 0:
+        bgm_chain = f"[1:a]atrim=start={shift:.3f},asetpts=PTS-STARTPTS,volume={volume:.2f}"
+    else:
+        bgm_chain = f"[1:a]volume={volume:.2f}"
     if fade:
         fade_duration = min(1.2, max(0.1, bgm_duration * 0.2)) if bgm_duration > 0 else 1.0
         fade_start = max(0.0, bgm_duration - fade_duration) if bgm_duration > 0 else 0.0
@@ -894,6 +1004,9 @@ class JobConfig:
     middle_count: Optional[int] = None
     middle_pools: list[dict] = field(default_factory=list)
     use_subtitle: bool = False
+    dedupe_level: str = "off"
+    dedupe_options: dict = field(default_factory=lambda: {"visual": True, "segment": True, "audio": True})
+    dedupe_versions: int = 1
     watermark_mode: str = "铺满全屏"
     watermark_position: str = "右下角"
     watermark_scale: float = 0.15
@@ -1184,6 +1297,7 @@ def _process_one_item(
             if cancel_event.is_set():
                 return {"index": idx, "state": "cancelled"}
             try:
+                delta = dedupe_delta(config.dedupe_level, config.dedupe_options, config.random_seed + idx)
                 _process_one_combo(
                     head,
                     tail,
@@ -1198,6 +1312,7 @@ def _process_one_item(
                     cancel_event,
                     pause_event,
                     log,
+                    delta,
                 )
                 log(f"[{idx}] 完成：{final_path}")
                 return {
@@ -1254,7 +1369,7 @@ def process_batch(
     if config.bgm_mode == "音乐文件夹固定" and config.fixed_bgm and config.fixed_bgm not in bgm_files:
         raise MediaError("固定 BGM 不在音乐文件夹中，请重新选择。")
 
-    count = max(1, min(200, int(config.count)))
+    count = max(1, min(200, int(config.count) * max(1, int(config.dedupe_versions or 1))))
     if config.fixed_head and config.fixed_tail:
         count = 1
     combos = build_combinations(
@@ -1401,6 +1516,7 @@ def _process_one_combo(
     cancel_event,
     pause_event,
     log: Callable[[str], None],
+    delta: Optional[dict] = None,
 ) -> None:
     tempdir = Path(tempfile.mkdtemp(prefix="sppj_"))
     try:
@@ -1438,23 +1554,30 @@ def _process_one_combo(
         durations.append(probe_media(tail_norm)["duration"])
 
         n_clips = len(clips)
+        # 差异化：入点偏移（输入级 -ss）会缩短各片段实际时长，xfade 计算须用裁剪后时长
+        offset = float((delta or {}).get("offset") or 0.0)
+        eff_durations = [max(0.3, d - offset) for d in durations]
+        ss_offsets = [offset] * n_clips if offset > 0 else None
+        # 深度差异化下转场随机化（类型+时长），打破剪辑序列指纹（参数在 _process_one_item 生成）
+        t_type = (delta or {}).get("transition") or transition_type
+        t_duration = float((delta or {}).get("transition_duration") or config.transition_duration)
         if n_clips == 2:
-            if transition_type:
+            if t_type:
                 concat_two(
                     clips[0], clips[1], concat_path,
-                    durations[0], durations[1],
-                    cancel_event, pause_event, transition_type, config.transition_duration, log,
+                    eff_durations[0], eff_durations[1],
+                    cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets,
                 )
             else:
                 # 无转场且素材已统一归一化，使用流复制快路径
                 concat_copy(clips, concat_path, cancel_event, pause_event, log)
         else:
             concat_chain(
-                clips, concat_path, durations,
-                cancel_event, pause_event, transition_type, config.transition_duration, log,
+                clips, concat_path, eff_durations,
+                cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets,
             )
 
-        total_duration = sum(durations)
+        total_duration = sum(eff_durations)
         if duration_limit and total_duration > duration_limit:
             trimmed = str(tempdir / "trimmed.mp4")
             trim_duration(concat_path, trimmed, duration_limit, cancel_event, pause_event, log)
@@ -1479,11 +1602,16 @@ def _process_one_combo(
                 bgm_info = probe_media(bgm)
                 bgm_duration = bgm_info["duration"]
             mixed = str(tempdir / "with_bgm.mp4")
+            bgm_shift = 0.0
+            if (delta or {}).get("bgm_shift_seed") is not None and bgm_duration > total_duration + 1:
+                shift_rng = random.Random(delta["bgm_shift_seed"])
+                bgm_shift = round(shift_rng.uniform(0.0, bgm_duration - total_duration), 3)
             mix_bgm(
                 current, bgm, mixed, float(config.bgm_volume),
                 cancel_event, pause_event, log,
                 fade=config.bgm_fade, ducking=config.bgm_ducking, bgm_duration=bgm_duration,
                 audio_volume=float(config.audio_volume),
+                bgm_shift=bgm_shift,
             )
             current = mixed
 
