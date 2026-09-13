@@ -13,9 +13,11 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import zipfile
+import base64
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -241,6 +243,35 @@ class AppState:
         return data
 
 
+def _run_ps_file(script_body: str, timeout: int = 300) -> str:
+    """执行 PowerShell 脚本（.ps1 文件方式，UTF-8 BOM 保证中文脚本正确读取）。
+    结果以 Base64(UTF-8) 输出（纯 ASCII 不受控制台代码页影响），此处解码返回真实字符串。"""
+    fd, tmp = tempfile.mkstemp(suffix=".ps1", prefix="sppj_dlg_")
+    with os.fdopen(fd, "w", encoding="utf-8-sig") as f:
+        f.write(script_body)
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", tmp],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+        b64 = (proc.stdout or "").strip()
+        if not b64:
+            return ""
+        try:
+            return base64.b64decode(b64).decode("utf-8")
+        except Exception:
+            return ""
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+
 def run_folder_dialog(description: str) -> str:
     script = f"""
 Add-Type -AssemblyName System.Windows.Forms
@@ -254,20 +285,12 @@ $d.Description = '{description}'
 $d.ShowNewFolderButton = $true
 $result = $d.ShowDialog($owner)
 $owner.Close()
-if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.SelectedPath }}
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($d.SelectedPath)
+    [Convert]::ToBase64String($bytes)
+}}
 """
-    try:
-        proc = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=300,
-        )
-        return (proc.stdout or "").strip()
-    except Exception:
-        return ""
+    return _run_ps_file(script)
 
 
 def run_file_dialog(description: str, filter_spec: str = "图片文件|*.png;*.jpg;*.jpeg;*.webp") -> str:
@@ -284,20 +307,12 @@ $d.Title = '{description}'
 $d.Filter = '{filter_spec}'
 $result = $d.ShowDialog($owner)
 $owner.Close()
-if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.FileName }}
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($d.FileName)
+    [Convert]::ToBase64String($bytes)
+}}
 """
-    try:
-        proc = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=300,
-        )
-        return (proc.stdout or "").strip()
-    except Exception:
-        return ""
+    return _run_ps_file(script)
 
 
 STATE = AppState()
