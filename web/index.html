@@ -757,6 +757,16 @@
                 </div>
               </div>
 
+              <div v-if="similarPairs.length" class="msg warn" style="border:1px solid var(--warn-soft); margin-top:10px">
+                <div style="font-weight:700; margin-bottom:4px">⚠ 疑似重复输出（{{ similarPairs.length }} 对）</div>
+                <div style="font-size:12px; line-height:1.8">
+                  <span v-for="pr in similarPairs" :key="pr.a + '|' + pr.b" style="margin-right:14px">
+                    <span style="font-family:var(--font-mono)">{{ pr.a }}</span> ≈ <span style="font-family:var(--font-mono)">{{ pr.b }}</span>
+                    <b style="color:var(--warn)">{{ Math.round(pr.sim * 100) }}%</b>
+                  </span>
+                </div>
+              </div>
+
               <div class="btn-row" style="margin-top:12px" v-if="outputFiles.length">
                 <button class="btn" @click="downloadZip">打包下载全部（ZIP）</button>
                 <span class="card-hint">{{ outputFiles.length }} 个成片</span>

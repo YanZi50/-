@@ -1798,3 +1798,68 @@ def process_failed_items(
     if progress:
         progress(len(failed_items), len(failed_items))
     return result
+
+def _frame_dhash(gray9x8: np.ndarray) -> np.ndarray:
+    """8x9 灰度帧的 dHash（64bit）：比较相邻列像素，得到 8x8 差异位。"""
+    return (gray9x8[:, 1:] > gray9x8[:, :-1]).flatten().astype(np.uint8)
+
+
+def fingerprint_video(path: str, frames: int = 3) -> Optional[np.ndarray]:
+    """抽取 frames 个均匀时间点帧（每帧 64bit dHash），拼接成视频指纹。
+    失败（无法探测/抽帧失败）返回 None。"""
+    try:
+        dur = probe_media(path)["duration"]
+    except Exception:
+        return None
+    if not dur or dur <= 0:
+        return None
+    tempdir = Path(tempfile.mkdtemp(prefix="sppj_fp_"))
+    bits: list[np.ndarray] = []
+    try:
+        for i in range(frames):
+            t = dur * (i + 1) / (frames + 1)
+            raw = tempdir / f"f{i}.raw"
+            args = [
+                _ffmpeg(), "-y",
+                "-ss", f"{t:.3f}",
+                "-i", path,
+                "-frames:v", "1",
+                "-f", "rawvideo", "-pix_fmt", "gray", "-s", "9x8",
+                str(raw),
+            ]
+            subprocess.run(args, capture_output=True, timeout=30)
+            if raw.exists() and raw.stat().st_size == 72:  # 9*8
+                data = np.frombuffer(raw.read_bytes(), dtype=np.uint8).reshape(8, 9)
+                bits.append(_frame_dhash(data))
+    finally:
+        shutil.rmtree(tempdir, ignore_errors=True)
+    if not bits:
+        return None
+    return np.concatenate(bits)
+
+
+def find_similar_outputs(outputs: list[str], threshold: float = 0.88) -> list[dict]:
+    """对输出文件两两比对感知哈希，返回疑似重复对 [{a, b, sim}]（按相似度降序）。
+    threshold=0.88 表示两文件指纹差异 <12%（画面高度一致才报疑似重复）。"""
+    fps: dict[str, np.ndarray] = {}
+    for p in outputs:
+        if not p or not os.path.isfile(p):
+            continue
+        fp = fingerprint_video(p)
+        if fp is not None:
+            fps[p] = fp
+    paths = list(fps)
+    pairs: list[dict] = []
+    for i in range(len(paths)):
+        for j in range(i + 1, len(paths)):
+            total = fps[paths[i]].size
+            dist = int(np.count_nonzero(fps[paths[i]] ^ fps[paths[j]]))
+            sim = 1.0 - dist / total
+            if sim >= threshold:
+                pairs.append({
+                    "a": Path(paths[i]).name,
+                    "b": Path(paths[j]).name,
+                    "sim": round(sim, 3),
+                })
+    pairs.sort(key=lambda x: -x["sim"])
+    return pairs

@@ -34,6 +34,7 @@ from video_engine import (
     JobConfig,
     MediaError,
     dedupe_by_fp,
+    find_similar_outputs,
     get_thumbnail,
     media_fingerprint,
     precheck_materials,
@@ -157,6 +158,7 @@ class AppState:
         self.started_at: float | None = None
         self.samples: list[tuple[float, int]] = []
         self.interrupted: dict | None = None
+        self.similar_pairs: list[dict] = []  # 本次任务输出疑似重复对
 
     def add_log(self, message: str) -> None:
         with self.lock:
@@ -455,6 +457,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/status":
             self._send_json(STATE.status_dict())
+            return
+        if route == "/api/similar":
+            self._send_json({"ok": True, "pairs": STATE.similar_pairs})
             return
         if route == "/api/debug":
             import video_engine
@@ -845,6 +850,18 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 STATE.result = result
                 STATE.last_failed_items = list(result.failed_items)
+                # 产物感知哈希查重：本批输出两两比对，疑似重复对告警
+                try:
+                    if result.success and not result.cancelled:
+                        out_paths = [it.get("output") for it in result.success_items if it.get("output")]
+                        STATE.similar_pairs = find_similar_outputs(out_paths)
+                        if STATE.similar_pairs:
+                            STATE.add_log(f"查重：发现 {len(STATE.similar_pairs)} 对疑似重复输出")
+                    else:
+                        STATE.similar_pairs = []
+                except Exception as exc:
+                    STATE.similar_pairs = []
+                    STATE.add_log(f"产物查重失败：{exc}")
                 record = {
                     "type": mode,
                     "config": asdict(config),

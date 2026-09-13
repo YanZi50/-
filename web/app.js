@@ -100,6 +100,7 @@ const state = reactive({
   healthChecking: false,
   previewTrans: 'fade',
   resultExpanded: false,
+  similarPairs: [],   // 本次任务输出疑似重复对（感知哈希查重）
   taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
   snapOpen: false,
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
@@ -856,6 +857,7 @@ async function poll() {
       }
       refreshOutputFiles();
       loadHistory();
+      loadSimilar();
       if (s.cancelled) showMsg('任务已取消', 'info');
       else if (s.error) showMsg('任务出错：' + s.error, 'error');
       else showMsg(`任务完成：成功 ${s.success}，失败 ${s.failed}，跳过 ${s.skipped}`, s.failed ? 'error' : 'success');
@@ -863,6 +865,13 @@ async function poll() {
   } catch (e) {
     state.serverOk = false;
   }
+}
+
+async function loadSimilar() {
+  try {
+    const s = await api('/api/similar');
+    state.similarPairs = (s && s.pairs) || [];
+  } catch (e) { /* 服务未就绪忽略 */ }
 }
 
 createApp({
@@ -879,6 +888,7 @@ createApp({
         state.presets = presets.presets || {};
       }).catch(() => { /* 服务未就绪由轮询提示 */ });
       loadHistory();
+      loadSimilar();
       setInterval(poll, 1000);
       poll();
     });
