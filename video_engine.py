@@ -348,6 +348,19 @@ def dedupe_delta(level: str, options: dict, seed: int) -> dict:
     opts = options or {}
     rng = random.Random(seed)
     d: dict = {}
+    strength = str(opts.get("deep_strength") or "medium")
+    s_amp = {"low": 0.010, "medium": 0.020, "high": 0.030}.get(strength, 0.020)
+    n_range = {"low": (3, 6), "medium": (6, 10), "high": (10, 16)}.get(strength, (6, 10))
+    if opts.get("speed"):
+        sign = 1.0 if rng.random() < 0.5 else -1.0
+        d["speed"] = round(1.0 + sign * rng.uniform(0.5 * s_amp, s_amp), 4)
+    if opts.get("mirror"):
+        d["mirror"] = True
+    if opts.get("noise"):
+        d["noise"] = rng.randint(n_range[0], n_range[1])
+    if opts.get("pitch"):
+        sign = 1.0 if rng.random() < 0.5 else -1.0
+        d["pitch"] = round(1.0 + sign * rng.uniform(0.5 * s_amp, s_amp), 4)
     if opts.get("visual"):
         amp = 0.05 if level == "light" else 0.10
         d["visual"] = True
@@ -375,7 +388,7 @@ def dedupe_delta(level: str, options: dict, seed: int) -> dict:
     return d
 
 
-def _prefilter_strings(delta: dict, i: int) -> tuple[str, str]:
+def _prefilter_strings(delta: dict, i: int, width: int = 0, height: int = 0) -> tuple[str, str]:
     """为第 i 个输入生成差异化前置滤镜（视频/音频）。
     返回 (vf, af)；无扰动时返回 ('', '')。
     注：入点偏移不走滤镜（trim+xfade 在 ffmpeg 7.1 报 -22），改由输入级 -ss 实现。"""
@@ -383,6 +396,16 @@ def _prefilter_strings(delta: dict, i: int) -> tuple[str, str]:
         return "", ""
     vf_parts: list[str] = []
     af_parts: list[str] = []
+    if delta.get("speed"):
+        vf_parts.append(f"setpts=PTS/{delta['speed']:.4f},fps=30")
+        af_parts.append(f"atempo={delta['speed']:.4f}")
+    if delta.get("mirror"):
+        vf_parts.append("hflip")
+    if delta.get("noise"):
+        vf_parts.append(f"noise=alls={delta['noise']}:allf=t+u")
+    if delta.get("pitch"):
+        pf = float(delta["pitch"])
+        af_parts.append(f"asetrate={int(48000 * pf)},aresample=48000,atempo={1.0 / pf:.4f}")
     if delta.get("visual"):
         vf_parts.append(
             f"eq=brightness={delta['brightness']:.4f}:contrast={delta['contrast']:.4f}:saturation={delta['saturation']:.4f}"
@@ -392,10 +415,18 @@ def _prefilter_strings(delta: dict, i: int) -> tuple[str, str]:
             # crop 宽高必须为偶数（yuv420p），否则 ffmpeg 报 -22
             x_even = int(delta.get("crop_x", 0)) & ~1
             y_even = int(delta.get("crop_y", 0)) & ~1
-            vf_parts.append(
-                f"scale=iw*{zoom:.4f}:ih*{zoom:.4f},"
-                f"crop=trunc(iw/{zoom:.4f}/2)*2:trunc(ih/{zoom:.4f}/2)*2:{x_even}:{y_even}"
-            )
+            if width > 0 and height > 0:
+                # 已知目标尺寸：放大后精确裁回目标分辨率（1080x1920 等），无浮点误差
+                vf_parts.append(
+                    f"scale=iw*{zoom:.4f}:ih*{zoom:.4f},"
+                    f"crop={width}:{height}:{x_even}:{y_even},setsar=1"
+                )
+            else:
+                # 兜底：按比例裁回（可能有 ±1px 舍入）
+                vf_parts.append(
+                    f"crop=trunc(iw/{zoom:.4f}/2)*2:trunc(ih/{zoom:.4f}/2)*2:{x_even}:{y_even},"
+                    f"scale=trunc(iw*{zoom:.4f}/2)*2:trunc(ih*{zoom:.4f}/2)*2,setsar=1"
+                )
     return ",".join(vf_parts), ",".join(af_parts)
 
 
@@ -413,6 +444,8 @@ def concat_two(
     delta: Optional[dict] = None,
     ss: Optional[list[float]] = None,
     encode_accel: str = "auto",
+    width: int = 0,
+    height: int = 0,
 ) -> None:
     offsets = ss or [0.0, 0.0]
     args = [_ffmpeg(), "-y"]
@@ -421,8 +454,8 @@ def concat_two(
             args += ["-ss", f"{off:.3f}"]
         args += ["-i", path]
     pre = []
-    v0, a0 = _prefilter_strings(delta or {}, 0)
-    v1, a1 = _prefilter_strings(delta or {}, 1)
+    v0, a0 = _prefilter_strings(delta or {}, 0, width, height)
+    v1, a1 = _prefilter_strings(delta or {}, 1, width, height)
     src_v = ["0:v", "1:v"]
     src_a = ["0:a", "1:a"]
     if v0:
@@ -541,6 +574,8 @@ def concat_chain(
     delta: Optional[dict] = None,
     ss: Optional[list[float]] = None,
     encode_accel: str = "auto",
+    width: int = 0,
+    height: int = 0,
 ) -> None:
     """通用 N 片段拼接：转场可用时链式 xfade，否则 concat 滤镜硬接。
     delta：差异化参数（画面微调），并入拼接链不增加转码次数。
@@ -550,7 +585,8 @@ def concat_chain(
         raise MediaError("拼接至少需要两个片段。")
     if n == 2:
         concat_two(clips[0], clips[1], dst, durations[0], durations[1],
-                   cancel_event, pause_event, transition_type, transition_duration, log, delta, ss, encode_accel=encode_accel)
+                   cancel_event, pause_event, transition_type, transition_duration, log, delta, ss,
+                   encode_accel=encode_accel, width=width, height=height)
         return
     inputs: list[str] = []
     for i, clip in enumerate(clips):
@@ -562,7 +598,7 @@ def concat_chain(
     src_v = [f"{i}:v" for i in range(n)]
     src_a = [f"{i}:a" for i in range(n)]
     for i in range(n):
-        vf, af = _prefilter_strings(delta or {}, i)
+        vf, af = _prefilter_strings(delta or {}, i, width, height)
         if vf:
             pre.append(f"[{i}:v]{vf}[v{i}p]")
             src_v[i] = f"v{i}p"
@@ -1558,17 +1594,19 @@ def _process_one_combo(
         n_clips = len(clips)
         # 差异化：入点偏移（输入级 -ss）会缩短各片段实际时长，xfade 计算须用裁剪后时长
         offset = float((delta or {}).get("offset") or 0.0)
-        eff_durations = [max(0.3, d - offset) for d in durations]
+        speed = float((delta or {}).get("speed") or 1.0)
+        eff_durations = [max(0.3, d - offset) / speed for d in durations]
         ss_offsets = [offset] * n_clips if offset > 0 else None
         # 深度差异化下转场随机化（类型+时长），打破剪辑序列指纹（参数在 _process_one_item 生成）
         t_type = (delta or {}).get("transition") or transition_type
         t_duration = float((delta or {}).get("transition_duration") or config.transition_duration)
         if n_clips == 2:
-            if t_type:
+            if t_type or delta:
                 concat_two(
                     clips[0], clips[1], concat_path,
                     eff_durations[0], eff_durations[1],
                     cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets, encode_accel=config.encode_accel,
+                    width=width, height=height,
                 )
             else:
                 # 无转场且素材已统一归一化，使用流复制快路径
@@ -1577,6 +1615,7 @@ def _process_one_combo(
             concat_chain(
                 clips, concat_path, eff_durations,
                 cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets, encode_accel=config.encode_accel,
+                width=width, height=height,
             )
 
         total_duration = sum(eff_durations)

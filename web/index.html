@@ -599,6 +599,31 @@
               </div>
             </div>
 
+            <div class="card" :class="{disabled: params.dedupe_level==='off'}">
+              <div class="card-title"><span class="bar"></span>深度差异化
+                <span class="card-hint" style="margin-left:8px">更强扰动 · 平台判重严重时开启 · 建议搭配镜像/噪点使用</span>
+              </div>
+              <div class="dl-opts">
+                <label v-for="o in deepDedupeOptions" :key="o.key" class="dl-opt"
+                       :class="{on: params.dedupe_options[o.key], disabled: params.dedupe_level==='off'}">
+                  <input type="checkbox" :disabled="params.dedupe_level==='off'" v-model="params.dedupe_options[o.key]" class="dl-check">
+                  <span class="dl-opt-main">
+                    <span class="dl-opt-name">{{ o.name }}</span>
+                    <span class="dl-opt-desc">{{ o.desc }}</span>
+                  </span>
+                </label>
+              </div>
+              <div class="dl-strength" :class="{disabled: params.dedupe_level==='off'}">
+                <span class="dl-strength-label">深度扰动强度</span>
+                <div class="seg" style="flex:1">
+                  <button v-for="s in deepStrengths" :key="s.value" :class="{on: params.dedupe_options.deep_strength===s.value}"
+                          :disabled="params.dedupe_level==='off'"
+                          @click="params.dedupe_options.deep_strength=s.value">{{ s.label }}</button>
+                </div>
+                <span class="dl-strength-hint">{{ (deepStrengths.find((s) => s.value === params.dedupe_options.deep_strength) || {}).hint }}</span>
+              </div>
+            </div>
+
             <div class="card">
               <div class="card-title"><span class="bar"></span>一键多版本</div>
               <div class="dl-versions">

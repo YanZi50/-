@@ -28,6 +28,18 @@ const dedupeOptions = [
   { key: 'segment', name: '片段差异化', desc: '随机入点偏移、素材顺序、插帧、随机转场' },
   { key: 'audio', name: '音频差异化', desc: 'BGM 随机起播位置、轻微变速' },
 ];
+/* 深度差异化：对画面/声音的更强扰动（打破平台指纹更彻底，观感影响更明显） */
+const deepDedupeOptions = [
+  { key: 'speed', name: '变速不变调', desc: '整体速度 ±1-3%，画面与声音同步，观感几乎无感' },
+  { key: 'mirror', name: '水平镜像', desc: '画面左右翻转（非对称画面适用）' },
+  { key: 'noise', name: '轻噪点', desc: '叠加轻微胶片颗粒，打破画面指纹' },
+  { key: 'pitch', name: '音调微移', desc: '声音整体升/降调 ≤3%，听感几乎无差' },
+];
+const deepStrengths = [
+  { value: 'low', label: '低', hint: '±1% 扰动，观感几乎不变' },
+  { value: 'medium', label: '中', hint: '±2% 扰动，推荐' },
+  { value: 'high', label: '高', hint: '±3% 扰动，观感可察觉' },
+];
 const dedupeLevelHint = {
   off: '不做差异化，每条成片内容一致（适合单条投放）',
   light: '画面与音频轻微扰动，成片观感基本不变（适合少量版本）',
@@ -104,7 +116,7 @@ const state = reactive({
     output_name_template: 'output_{序号}_{开头}_{结尾}',
     dedupe_enabled: true,
     dedupe_level: 'off',
-    dedupe_options: { visual: true, segment: true, audio: true },
+    dedupe_options: { visual: true, segment: true, audio: true, speed: false, mirror: false, noise: false, pitch: false, deep_strength: 'medium' },
     dedupe_versions: 1,
     random_seed: 20260905,
     transition_mode: '不使用',
@@ -195,13 +207,14 @@ const snapRows = computed(() => {
   rows.push({ label: '出片', value: `${s.count || 0} 条` + (v > 1 ? ` × ${v} 版 = ${(s.count || 0) * v} 条` : '') });
   rows.push({ label: '并发', value: `${s.workers || 1} 路` });
   rows.push({ label: '编码加速', value: s.encode_accel === 'nvenc' ? '显卡加速 (NVENC)' : s.encode_accel === 'cpu' ? '仅 CPU' : '自动检测' });
+  rows.push({ label: '深度差异化', value: (s.dedupe_options || {}).speed || (s.dedupe_options || {}).mirror || (s.dedupe_options || {}).noise || (s.dedupe_options || {}).pitch ? '开启' : '关闭' });
   rows.push({ label: '分辨率', value: s.resolution || '-' });
   rows.push({ label: '目标时长', value: s.duration_mode || '不限制' });
   rows.push({ label: '画面适配', value: s.fit_mode || '黑边' });
   rows.push({ label: '转场', value: s.transition_mode || '不使用' });
   rows.push({ label: 'BGM', value: s.bgm_mode || '不使用' });
   rows.push({ label: '水印', value: s.use_watermark ? (s.watermark_mode || '') + (s.watermark_path ? ' · ' + String(s.watermark_path).split(/[\\/]/).pop() : '') : '关闭' });
-  rows.push({ label: '去重', value: s.dedupe_level === 'off' ? '未开启' : ((dedupeLevels.find((l) => l.value === s.dedupe_level) || {}).label || s.dedupe_level) + ` · 版本×${s.dedupe_versions || 1}` });
+  rows.push({ label: '去重', value: s.dedupe_level === 'off' ? '未开启' : ((dedupeLevels.find((l) => l.value === s.dedupe_level) || {}).label || s.dedupe_level) + ` · 版本×${s.dedupe_versions || 1}` + (s.dedupe_level !== 'off' && s.dedupe_options && (s.dedupe_options.speed || s.dedupe_options.mirror || s.dedupe_options.noise || s.dedupe_options.pitch) ? ' · 深度差异化' : '') });
   rows.push({ label: '命名模板', value: s.output_name_template || '-' });
   rows.push({ label: '开头素材', value: s.head_folder || '-' });
   rows.push({ label: '结尾素材', value: s.tail_folder || '-' });
@@ -339,7 +352,7 @@ function applyConfig(cfg) {
   p.output_name_template = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
   p.dedupe_enabled = cfg.dedupe_enabled !== false;
   p.dedupe_level = cfg.dedupe_level || 'off';
-  p.dedupe_options = Object.assign({ visual: true, segment: true, audio: true }, cfg.dedupe_options || {});
+  p.dedupe_options = Object.assign({ visual: true, segment: true, audio: true, speed: false, mirror: false, noise: false, pitch: false, deep_strength: 'medium' }, cfg.dedupe_options || {});
   p.dedupe_versions = Math.max(1, Math.min(5, cfg.dedupe_versions || 1));
   p.random_seed = cfg.random_seed || 20260905;
   p.transition_mode = cfg.transition_mode || '不使用';
@@ -889,6 +902,7 @@ createApp({
       downloadZip, Math,
       previewTransClass, previewTransName,
       visibleRows, toggleResults,
+      deepDedupeOptions, deepStrengths,
     };
   },
 }).mount('#app');
