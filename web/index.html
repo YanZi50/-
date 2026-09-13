@@ -791,6 +791,7 @@
 
               <div class="btn-row" style="margin-top:12px" v-if="outputFiles.length">
                 <button class="btn" @click="downloadZip">打包下载全部（ZIP）</button>
+                <button class="btn soft" @click="exportCsv">导出投放清单（CSV）</button>
                 <span class="card-hint">{{ outputFiles.length }} 个成片</span>
               </div>
 

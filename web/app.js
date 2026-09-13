@@ -906,6 +906,35 @@ async function clearQueue() {
   loadQueue();
 }
 
+function exportCsv() {
+  const items = state.job.success_items || [];
+  if (!items.length) { showMsg('没有可导出的成片', 'warn'); return; }
+  const esc = v => {
+    const s = String(v == null ? '' : v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const rows = [
+    ['序号', '成片文件名', '完整路径', '开头素材', '中间素材', '结尾素材'],
+    ...items.map(it => {
+      const out = String(it.output || '');
+      const name = out.split(/[\\/]/).pop() || out;
+      return [it.index, name, out, fileName(it.head), (it.middle || '').replace(/^ \+ /, ''), fileName(it.tail)];
+    }),
+  ];
+  const csv = '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  a.href = URL.createObjectURL(blob);
+  a.download = `投放清单_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  showMsg(`已导出投放清单（${items.length} 条）`, 'success');
+}
+
 createApp({
   setup() {
     onMounted(() => {
@@ -946,7 +975,7 @@ createApp({
       previewTransClass, previewTransName,
       visibleRows, toggleResults,
       deepDedupeOptions, deepStrengths,
-      addToQueue, removeFromQueue, clearQueue,
+      addToQueue, removeFromQueue, clearQueue, exportCsv,
     };
   },
 }).mount('#app');
