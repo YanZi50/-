@@ -388,6 +388,21 @@ input[type="range"]::-webkit-slider-thumb {
 .msg.info { background: var(--accent-soft); color: var(--accent); }
 .msg.success { background: var(--success-soft); color: var(--success); }
 .msg.warn { background: var(--warn-soft); color: var(--warn); }
+/* 疑似重复对：每对一行，文件名可截断，重复率右侧徽标突出 */
+.sim-list { display: flex; flex-direction: column; gap: 6px; }
+.sim-pair {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 8px; border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+}
+.sim-files { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; }
+.sim-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.sim-sep { flex-shrink: 0; color: var(--text-3); font-size: 12px; }
+.sim-pct {
+  flex-shrink: 0; font-weight: 800; font-size: 13px; color: var(--warn);
+  background: var(--warn-soft); border: 1px solid var(--warn-soft);
+  padding: 2px 10px; border-radius: 999px; min-width: 48px; text-align: center;
+}
 
 /* 全局提示（右侧悬浮）：不参与文档流，避免页面上下跳动 */
 .msg-toast {

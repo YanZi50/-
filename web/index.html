@@ -768,12 +768,16 @@
               </div>
 
               <div v-if="similarPairs.length" class="msg warn" style="border:1px solid var(--warn-soft); margin-top:10px">
-                <div style="font-weight:700; margin-bottom:4px">⚠ 疑似重复输出（{{ similarPairs.length }} 对）</div>
-                <div style="font-size:12px; line-height:1.8">
-                  <span v-for="pr in similarPairs" :key="pr.a + '|' + pr.b" style="margin-right:14px">
-                    <span style="font-family:var(--font-mono)">{{ pr.a }}</span> ≈ <span style="font-family:var(--font-mono)">{{ pr.b }}</span>
-                    <b style="color:var(--warn)">{{ Math.round(pr.sim * 100) }}%</b>
-                  </span>
+                <div style="font-weight:700; margin-bottom:6px">⚠ 疑似重复输出（{{ similarPairs.length }} 对）</div>
+                <div class="sim-list">
+                  <div v-for="pr in similarPairs" :key="pr.a + '|' + pr.b" class="sim-pair">
+                    <span class="sim-files">
+                      <span class="sim-file" :title="pr.a">{{ pr.a }}</span>
+                      <span class="sim-sep">≈</span>
+                      <span class="sim-file" :title="pr.b">{{ pr.b }}</span>
+                    </span>
+                    <span class="sim-pct">{{ Math.round(pr.sim * 100) }}%</span>
+                  </div>
                 </div>
               </div>
 
