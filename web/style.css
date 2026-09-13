@@ -308,6 +308,19 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ---------- 素材网格 ---------- */
 .material-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
+/* 素材两排显示，超出滚动查看（max-height 由 JS 按实时卡片高度精确设置，此处为兜底） */
+.material-grid-scroll {
+  overflow-y: auto;
+  max-height: 560px;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.material-grid-scroll::-webkit-scrollbar { width: 6px; }
+.material-grid-scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+.material-grid-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+.material-grid-scroll::-webkit-scrollbar-track { background: transparent; }
 .material-card {
   border: 1px solid var(--line); border-radius: var(--radius);
   overflow: hidden; cursor: pointer; position: relative;

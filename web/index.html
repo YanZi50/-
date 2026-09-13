@@ -101,9 +101,9 @@
               </div>
 
               <div v-if="materials[zone.kind].length && zoneExpanded[zone.kind]">
-                <div class="material-grid">
+                <div class="material-grid material-grid-scroll">
                   <div class="material-card"
-                       v-for="m in materials[zone.kind].slice(0, zoneShown[zone.kind])" :key="m.path"
+                       v-for="m in materials[zone.kind]" :key="m.path"
                        :class="{ picked: fixed[zone.kind]===m.path, broken: !m.ok }"
                        @click="toggleFixed(zone.kind, m.path)">
                     <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
@@ -118,10 +118,6 @@
                     </div>
                   </div>
                 </div>
-                <button v-if="materials[zone.kind].length > zoneShown[zone.kind]"
-                        class="btn plain" style="margin-top:10px" @click="showMore(zone.kind)">
-                  加载更多（已显示 {{ Math.min(zoneShown[zone.kind], materials[zone.kind].length) }}/{{ materials[zone.kind].length }}）
-                </button>
               </div>
               <div v-else-if="materials[zone.kind].length" class="empty" style="margin-top:12px">
                 {{ materials[zone.kind].length }} 个素材，点击「展开」查看
@@ -166,9 +162,9 @@
                   勾选该池素材（最多 10 条，按勾选顺序插入）；未勾选时从该池随机抽取 {{ pool.count }} 条
                 </div>
                 <div v-if="pool.files.length && pool.expanded" style="margin-top:10px">
-                  <div class="material-grid">
+                  <div class="material-grid material-grid-scroll">
                     <div class="material-card"
-                         v-for="m in pool.files.slice(0, pool.shown)" :key="m.path"
+                         v-for="m in pool.files" :key="m.path"
                          :class="{ picked: pool.items.includes(m.path), broken: !m.ok }"
                          @click="togglePoolItem(pool, m.path)">
                       <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
@@ -183,10 +179,6 @@
                       </div>
                     </div>
                   </div>
-                  <button v-if="pool.files.length > pool.shown" class="btn plain" style="margin-top:10px"
-                          @click="showPoolMore(pool)">
-                    加载更多（已显示 {{ Math.min(pool.shown, pool.files.length) }}/{{ pool.files.length }}）
-                  </button>
                 </div>
                 <div v-else-if="pool.files.length" class="empty" style="margin-top:10px">
                   {{ pool.files.length }} 个素材，点击「展开」查看
@@ -221,9 +213,9 @@
               </div>
 
               <div v-if="materials['bgm'].length && zoneExpanded['bgm']">
-                <div class="material-grid">
+                <div class="material-grid material-grid-scroll">
                   <div class="material-card"
-                       v-for="m in materials['bgm'].slice(0, zoneShown['bgm'])" :key="m.path"
+                       v-for="m in materials['bgm']" :key="m.path"
                        :class="{ picked: fixed['bgm']===m.path, broken: !m.ok }"
                        @click="toggleFixed('bgm', m.path)">
                     <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
@@ -238,10 +230,6 @@
                     </div>
                   </div>
                 </div>
-                <button v-if="materials['bgm'].length > zoneShown['bgm']"
-                        class="btn plain" style="margin-top:10px" @click="showMore('bgm')">
-                  加载更多（已显示 {{ Math.min(zoneShown['bgm'], materials['bgm'].length) }}/{{ materials['bgm'].length }}）
-                </button>
               </div>
               <div v-else-if="materials['bgm'].length" class="empty" style="margin-top:12px">
                 {{ materials['bgm'].length }} 个素材，点击「展开」查看

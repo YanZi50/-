@@ -108,9 +108,8 @@ const state = reactive({
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
-  middlePools: [{ id: 1, folder: '', items: [], count: 1, files: [], expanded: false, shown: 24 }],
+  middlePools: [{ id: 1, folder: '', items: [], count: 1, files: [], expanded: false }],
   zoneExpanded: { head: false, tail: false, middle: false, bgm: false },
-  zoneShown: { head: 24, tail: 24, middle: 24, bgm: 24 },
   params: {
     count: 10,
     workers: 2,
@@ -338,7 +337,7 @@ function applyConfig(cfg) {
       folder: pool.folder || '',
       items: Array.isArray(pool.items) ? pool.items.slice() : [],
       count: pool.count ?? 1,
-      files: [], expanded: false, shown: 24,
+      files: [], expanded: false,
     }));
   } else {
     const legacyItems = Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
@@ -400,6 +399,7 @@ async function scan(kind) {
       path: f.path, name: f.name, ok: true, thumbUrl: thumbUrl(f.path),
     });
     if (kind === 'head' || kind === 'tail') syncFixed(kind);
+    scheduleFitGrids();
   } catch (e) {
     showMsg('素材扫描失败：' + e.message, 'error');
   }
@@ -421,6 +421,7 @@ async function scanPool(pool) {
     // 过滤已失效的勾选项
     const valid = new Set(pool.files.map((m) => m.path));
     pool.items = pool.items.filter((p) => valid.has(p));
+    scheduleFitGrids();
   } catch (e) {
     showMsg('中间素材池扫描失败：' + e.message, 'error');
   }
@@ -456,9 +457,20 @@ function poolOrder(pool, path) {
 
 function togglePoolExpand(pool) {
   pool.expanded = !pool.expanded;
+  scheduleFitGrids();
 }
-function showPoolMore(pool) {
-  pool.shown += 24;
+
+/* 素材区固定两排高度（JS 按实时卡片高度精确测量，适配任意窗口宽度），超出内部滚动 */
+let _fitGridsTimer = null;
+function scheduleFitGrids() {
+  clearTimeout(_fitGridsTimer);
+  _fitGridsTimer = setTimeout(fitGrids, 60);
+}
+function fitGrids() {
+  document.querySelectorAll('.material-grid-scroll').forEach((el) => {
+    const first = el.querySelector('.material-card');
+    el.style.maxHeight = first ? (first.offsetHeight * 2 + 12) + 'px' : '';
+  });
 }
 
 function thumbUrl(path) {
@@ -522,13 +534,12 @@ function toggleFixed(kind, path) {
 
 function toggleExpand(kind) {
   state.zoneExpanded[kind] = !state.zoneExpanded[kind];
-}
-function showMore(kind) {
-  state.zoneShown[kind] += 24;
+  scheduleFitGrids();
 }
 function expandAll() {
   ['head', 'tail', 'bgm'].forEach((k) => { state.zoneExpanded[k] = true; });
   state.middlePools.forEach((p) => { p.expanded = true; });
+  scheduleFitGrids();
 }
 function collapseAll() {
   ['head', 'tail', 'bgm'].forEach((k) => { state.zoneExpanded[k] = false; });
@@ -939,6 +950,7 @@ createApp({
   setup() {
     onMounted(() => {
       document.documentElement.dataset.theme = state.theme;
+      window.addEventListener('resize', scheduleFitGrids);
       Promise.all([
         api('/api/config/load'),
         api('/api/templates'),
@@ -965,8 +977,8 @@ createApp({
       selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
       selectPoolFolder, addMiddlePool, removeMiddlePool, scanPool,
-      togglePoolItem, poolOrder, togglePoolExpand, showPoolMore,
-      toggleExpand, showMore, expandAll, collapseAll,
+      togglePoolItem, poolOrder, togglePoolExpand,
+      toggleExpand, expandAll, collapseAll,
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
       loadHistory, clearHistory, loadFromHistory,
       precheck, startJob, previewJob, togglePause, cancelJob, retryFailed,
