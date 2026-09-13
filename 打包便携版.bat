@@ -21,6 +21,11 @@ if not exist "dist\信息流素材一键拼接\bin" mkdir "dist\信息流素材�
 copy /y "%FFMPEG%" "dist\信息流素材一键拼接\bin\ffmpeg.exe" >nul
 if errorlevel 1 ( echo 复制 ffmpeg 失败 & pause & exit /b 1 )
 
-echo [3/3] 完成：dist\信息流素材一键拼接\
-echo 双击 信息流素材一键拼接.exe 即可使用（自动打开浏览器）。
+echo [3/3] 压缩便携版并输出到 D:\Myfolder\doubao\...
+powershell -NoProfile -Command "Compress-Archive -Path 'dist\信息流素材一键拼接\*' -DestinationPath 'D:\Myfolder\doubao\信息流素材一键拼接-便携版.zip' -Force"
+if errorlevel 1 ( echo 压缩失败 & pause & exit /b 1 )
+
+echo 完成：
+echo   便携版压缩包：D:\Myfolder\doubao\信息流素材一键拼接-便携版.zip
+echo   解压后双击 信息流素材一键拼接.exe 即可使用（自动打开浏览器）。
 pause
