@@ -511,22 +511,21 @@ async function selectPoolFolder(pool) {
   }
 }
 
-/* ---------- 上传（已移除：素材库改为仅「选择」本地文件夹，不再拷贝副本） ---------- */
+/* ---------- 水印选择（服务端文件对话框，直接引用本地文件，不拷贝） ---------- */
 
 async function pickWatermark(e) {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
+  e.preventDefault();
   try {
-    await uploadFileXhr('watermark', file);
-    const data = await api('/api/upload_path?kind=watermark');
+    const data = await api('/api/select_watermark');
+    if (data.busy) { showMsg('已有窗口打开，请先完成当前选择', 'warn'); return; }
     if (data.path) {
-      state.params.watermark_path = data.path + '\\' + file.name;
-      showMsg('水印已选择：' + file.name, 'success');
+      state.params.watermark_path = data.path;
+      showMsg('水印已选择：' + data.path.split(/[\\/]/).pop(), 'success');
     }
   } catch (err) {
-    showMsg('水印上传失败：' + err.message, 'error');
+    showMsg('选择水印失败：' + err.message, 'error');
   }
-  e.target.value = '';
+  if (e && e.target) e.target.value = '';
 }
 
 /* ---------- 转场 chips ---------- */

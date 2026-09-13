@@ -470,10 +470,7 @@
                     <div class="field-label">水印图片</div>
                     <div class="folder-row">
                       <input class="input input-path" v-model="params.watermark_path" placeholder="PNG / JPG 路径">
-                      <label class="btn soft" style="cursor:pointer">
-                        选择文件
-                        <input type="file" accept="image/png,image/jpeg,image/webp" hidden @change="pickWatermark">
-                      </label>
+                      <button class="btn soft" @click="pickWatermark">选择文件</button>
                     </div>
                   </div>
                   <div class="field">

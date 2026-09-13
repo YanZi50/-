@@ -270,6 +270,36 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.SelectedPath }}
         return ""
 
 
+def run_file_dialog(description: str, filter_spec: str = "图片文件|*.png;*.jpg;*.jpeg;*.webp") -> str:
+    """选择单个文件（如水印图片），返回真实本地路径。"""
+    script = f"""
+Add-Type -AssemblyName System.Windows.Forms
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.WindowState = 'Minimized'
+$owner.Show()
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.Title = '{description}'
+$d.Filter = '{filter_spec}'
+$result = $d.ShowDialog($owner)
+$owner.Close()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{ $d.FileName }}
+"""
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+        )
+        return (proc.stdout or "").strip()
+    except Exception:
+        return ""
+
+
 STATE = AppState()
 SELECT_LOCK = threading.Lock()
 
@@ -448,6 +478,19 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 path = run_folder_dialog(desc)
+                self._send_json({"path": path, "busy": False})
+            finally:
+                SELECT_LOCK.release()
+            return
+        if route == "/api/select_watermark":
+            if not SELECT_LOCK.acquire(blocking=False):
+                self._send_json({"busy": True, "path": ""})
+                return
+            try:
+                path = run_file_dialog("选择水印图片")
+                if path:
+                    allowed = [Path(path).resolve()]
+                    register_allowed_dir(allowed[0].parent)
                 self._send_json({"path": path, "busy": False})
             finally:
                 SELECT_LOCK.release()
