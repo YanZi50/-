@@ -72,6 +72,15 @@ def _fmt_size(n: int) -> str:
     return f"{n:.1f} TB"
 
 
+def _fmt_eta(seconds: float) -> str:
+    s = int(max(1, round(seconds)))
+    if s < 60:
+        return f"约 {s} 秒"
+    if s < 3600:
+        return f"约 {s // 60} 分 {s % 60} 秒"
+    return f"约 {s // 3600} 时 {(s % 3600) // 60} 分"
+
+
 # ---------------------------------------------------------------------------
 # 下载白名单：download / zip 只允许访问被登记的输出目录
 # ---------------------------------------------------------------------------
@@ -159,6 +168,7 @@ class AppState:
         self.samples: list[tuple[float, int]] = []
         self.interrupted: dict | None = None
         self.similar_pairs: list[dict] = []  # 本次任务输出疑似重复对
+        self.last_speed: float | None = None  # 最近一次任务实测速度（条/秒，含并发）
         self.queue: list[dict] = []          # 待执行队列 [{id, label, payload}]
         self.queue_seq: int = 0
 
@@ -892,6 +902,11 @@ class Handler(BaseHTTPRequestHandler):
                     "cancelled": result.cancelled,
                 }
                 save_history(record)
+                # 记录最近任务实测速度（条/秒，含并发），供下次预检估算生成时间
+                if result.success and STATE.started_at:
+                    elapsed = time.time() - STATE.started_at
+                    if elapsed > 1:
+                        STATE.last_speed = result.success / elapsed
                 return not result.cancelled
             except MediaError as exc:
                 STATE.error = str(exc)
@@ -1044,9 +1059,22 @@ class Handler(BaseHTTPRequestHandler):
         else:
             add("ok", "引擎", "FFmpeg 可用")
 
+        # 6 预计生成时间：优先用最近任务实测速度（条/秒含并发），无历史时按编码方式保守估算
+        eta_seconds: int = 0
+        try:
+            total_items = config.count * max(1, int(getattr(config, "dedupe_versions", 1) or 1))
+            workers = max(1, int(getattr(config, "workers", 1) or 1))
+            accel = getattr(config, "encode_accel", "auto") or "auto"
+            per_item = 2.5 if accel == "nvenc" else (12.0 if accel == "cpu" else 6.0)  # 秒/条
+            speed = STATE.last_speed or (workers / per_item)
+            eta_seconds = int(total_items / max(0.1, speed)) + 5
+            add("ok", "预计时间", f"共 {total_items} 条，预计生成 {_fmt_eta(eta_seconds)}")
+        except Exception as exc:
+            STATE.add_log(f"预计时间计算失败：{exc}")
+
         errors = [i for i in items if i["level"] == "error"]
         warns = [i for i in items if i["level"] == "warn"]
-        return {"ok": not errors, "items": items, "errors": errors, "warns": warns, "report": report}
+        return {"ok": not errors, "items": items, "errors": errors, "warns": warns, "report": report, "eta_seconds": eta_seconds}
 
     def _ffmpeg_ok(self) -> bool:
         try:

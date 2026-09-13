@@ -666,6 +666,10 @@
                     <span class="yield-label">实际生成</span>
                     <span class="yield-num total">{{ yieldTotal }} 条</span>
                   </div>
+                  <div class="yield-cell" v-if="health.eta_seconds">
+                    <span class="yield-label">预计生成时间</span>
+                    <span class="yield-num" style="color:var(--accent)">{{ fmtEta(health.eta_seconds) }}</span>
+                  </div>
                 </div>
                 <div class="health-items">
                   <div v-for="(it, i) in health.items" :key="i" class="health-item" :class="it.level">
@@ -742,7 +746,11 @@
               <div class="table-wrap" v-if="resultRows.length">
                 <div class="result-head">
                   <span>生成结果（{{ resultRows.length }} 条）</span>
-                  <span class="result-toggle" @click="toggleResults">{{ state.resultExpanded ? '收起 ▲' : '展开全部 ▾' }}</span>
+                  <span class="pager" v-if="resultPageCount > 1">
+                    <button class="btn plain page-btn" @click="goResultPage(resultPage - 1)" :disabled="resultPage <= 1">‹ 上一页</button>
+                    <span class="page-num">{{ resultPage }} / {{ resultPageCount }}</span>
+                    <button class="btn plain page-btn" @click="goResultPage(resultPage + 1)" :disabled="resultPage >= resultPageCount">下一页 ›</button>
+                  </span>
                 </div>
                 <table class="tbl">
                   <thead>
@@ -762,8 +770,10 @@
                     </tr>
                   </tbody>
                 </table>
-                <div v-if="!state.resultExpanded && resultRows.length > 5" class="result-more" @click="toggleResults">
-                  还有 {{ resultRows.length - 5 }} 条结果，点击展开全部 ▾
+                <div class="pager" style="justify-content:center; margin-top:10px" v-if="resultPageCount > 1">
+                  <button class="btn plain page-btn" @click="goResultPage(resultPage - 1)" :disabled="resultPage <= 1">‹ 上一页</button>
+                  <span class="page-num">第 {{ resultPage }} / {{ resultPageCount }} 页 · 每页 5 条</span>
+                  <button class="btn plain page-btn" @click="goResultPage(resultPage + 1)" :disabled="resultPage >= resultPageCount">下一页 ›</button>
                 </div>
               </div>
 
@@ -796,12 +806,14 @@
                 <button class="btn danger" @click="clearHistory">清空</button>
               </div>
               <div v-if="history.length">
-                <div class="history-item" v-for="h in history" :key="h._file" @click="loadFromHistory(h)">
-                  <div>
-                    <div class="history-desc">{{ h._file }} · {{ h.type }}</div>
-                    <div class="history-meta">{{ h.config.head_folder }} → {{ h.config.output_folder }}</div>
+                <div class="history-scroll">
+                  <div class="history-item" v-for="h in history" :key="h._file" @click="loadFromHistory(h)">
+                    <div>
+                      <div class="history-desc">{{ h._file }} · {{ h.type }}</div>
+                      <div class="history-meta">{{ h.config.head_folder }} → {{ h.config.output_folder }}</div>
+                    </div>
+                    <div class="history-meta">成功 {{ h.success }} / 失败 {{ h.failed }}<template v-if="h.skipped"> / 跳过 {{ h.skipped }}</template></div>
                   </div>
-                  <div class="history-meta">成功 {{ h.success }} / 失败 {{ h.failed }}<template v-if="h.skipped"> / 跳过 {{ h.skipped }}</template></div>
                 </div>
               </div>
               <div v-else class="empty">暂无历史记录</div>

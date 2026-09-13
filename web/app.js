@@ -99,10 +99,10 @@ const state = reactive({
   health: null,
   healthChecking: false,
   previewTrans: 'fade',
-  resultExpanded: false,
   similarPairs: [],   // 本次任务输出疑似重复对（感知哈希查重）
   queue: [],          // 待执行任务队列
   queueLabel: '',
+  resultPage: 1,      // 生成结果当前页码（每页 5 条）
   taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
   snapOpen: false,
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
@@ -254,10 +254,17 @@ const resultRows = computed(() => {
   }));
   return rows.sort((a, b) => a.index - b.index);
 });
-const visibleRows = computed(() =>
-  state.resultExpanded ? resultRows.value : resultRows.value.slice(0, 5)
-);
-function toggleResults() { state.resultExpanded = !state.resultExpanded; }
+const visibleRows = computed(() => {
+  const all = resultRows.value;
+  const per = 5;
+  const page = Math.max(1, Math.min(state.resultPage, Math.ceil(all.length / per) || 1));
+  return all.slice((page - 1) * per, page * per);
+});
+const resultPageCount = computed(() => Math.max(1, Math.ceil(resultRows.value.length / 5)));
+function goResultPage(p) {
+  const max = resultPageCount.value;
+  state.resultPage = Math.max(1, Math.min(p, max));
+}
 
 /* ---------- 转场预览 ---------- */
 const previewTransClass = computed(() =>
@@ -863,6 +870,7 @@ async function poll() {
     }
     if (!s.running && state.job.done === false && (s.success > 0 || s.failed > 0 || s.skipped > 0 || s.cancelled)) {
       state.job.done = true;
+      state.resultPage = 1;
       if (s.success_items && s.success_items[0] && state.previewUrl === '' && state.job.total === 1) {
         const it = s.success_items[0];
         const m = String(it.output).match(/^(.+)[\\/]([^\\/]+)$/);
@@ -985,7 +993,7 @@ createApp({
       resumeJob, discardInterrupted,
       downloadZip, Math,
       previewTransClass, previewTransName,
-      visibleRows, toggleResults,
+      visibleRows, resultPageCount, goResultPage,
       deepDedupeOptions, deepStrengths,
       addToQueue, removeFromQueue, clearQueue, exportCsv,
     };
