@@ -126,6 +126,7 @@ const state = reactive({
     normalize_audio: false,
     use_subtitle: false,
     fit_mode: 'fit',
+    encode_accel: 'auto',
   },
   presets: {},
   presetName: '',
@@ -193,6 +194,7 @@ const snapRows = computed(() => {
   const v = (s.dedupe_level !== 'off' ? s.dedupe_versions || 1 : 1);
   rows.push({ label: '出片', value: `${s.count || 0} 条` + (v > 1 ? ` × ${v} 版 = ${(s.count || 0) * v} 条` : '') });
   rows.push({ label: '并发', value: `${s.workers || 1} 路` });
+  rows.push({ label: '编码加速', value: s.encode_accel === 'nvenc' ? '显卡加速 (NVENC)' : s.encode_accel === 'cpu' ? '仅 CPU' : '自动检测' });
   rows.push({ label: '分辨率', value: s.resolution || '-' });
   rows.push({ label: '目标时长', value: s.duration_mode || '不限制' });
   rows.push({ label: '画面适配', value: s.fit_mode || '黑边' });
@@ -331,6 +333,7 @@ function applyConfig(cfg) {
   const p = state.params;
   p.count = cfg.count ?? 10;
   p.workers = cfg.workers ?? 2;
+  p.encode_accel = cfg.encode_accel || 'auto';
   p.resolution = cfg.resolution || '1080x1920';
   p.duration_mode = cfg.duration_mode || '不限制';
   p.output_name_template = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';

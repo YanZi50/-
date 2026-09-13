@@ -305,6 +305,16 @@
                   </div>
                 </div>
               </div>
+              <div class="grid-2">
+                <div class="field">
+                  <div class="field-label">编码加速</div>
+                  <div class="seg">
+                    <button :class="{on: params.encode_accel==='auto'}" @click="params.encode_accel='auto'">自动检测</button>
+                    <button :class="{on: params.encode_accel==='nvenc'}" @click="params.encode_accel='nvenc'">显卡加速</button>
+                    <button :class="{on: params.encode_accel==='cpu'}" @click="params.encode_accel='cpu'">仅CPU</button>
+                  </div>
+                </div>
+              </div>
               <div class="field">
                 <div class="field-label">画面适配（素材比例与目标不一致时）</div>
                 <div class="seg">

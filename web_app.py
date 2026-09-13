@@ -804,6 +804,7 @@ class Handler(BaseHTTPRequestHandler):
             watermark_scale=_safe_float(payload.get("watermark_scale", 0.15), 0.15, 0.05, 0.6),
             watermark_opacity=_safe_float(payload.get("watermark_opacity", 0.6), 0.6, 0.05, 1.0),
             workers=_safe_int(payload.get("workers", 2), 2, 1, 8),
+            encode_accel=str(payload.get("encode_accel") or "auto"),
         )
 
     def _run_task(self, config: JobConfig, label: str, mode: str, failed_items: list[dict] | None = None) -> None:

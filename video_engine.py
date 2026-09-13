@@ -279,6 +279,7 @@ def normalize_clip(
     log: Optional[Callable[[str], None]] = None,
     normalize_audio: bool = False,
     fit_mode: str = "fit",
+    encode_accel: str = "auto",
 ) -> None:
     cached = _norm_cache_path(src, width, height, has_audio, normalize_audio, fit_mode)
     if cached.exists() and cached.stat().st_size > 0:
@@ -320,12 +321,7 @@ def normalize_clip(
     else:
         args += ["-map", "1:a:0"]
     args += [
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "18",
+        *_vcodec_args(encode_accel, 18),
         "-c:a",
         "aac",
         "-b:a",
@@ -416,6 +412,7 @@ def concat_two(
     log: Optional[Callable[[str], None]] = None,
     delta: Optional[dict] = None,
     ss: Optional[list[float]] = None,
+    encode_accel: str = "auto",
 ) -> None:
     offsets = ss or [0.0, 0.0]
     args = [_ffmpeg(), "-y"]
@@ -466,12 +463,7 @@ def concat_two(
         "[v]",
         "-map",
         "[a]",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
+        *_vcodec_args(encode_accel, 20),
         "-c:a",
         "aac",
         "-b:a",
@@ -492,6 +484,7 @@ def concat_three(
     transition_type: Optional[str] = None,
     transition_duration: float = 0.5,
     log: Optional[Callable[[str], None]] = None,
+    encode_accel: str = "auto",
 ) -> None:
     can_transition = (
         transition_type
@@ -526,12 +519,7 @@ def concat_three(
         "[v]",
         "-map",
         "[a]",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
+        *_vcodec_args(encode_accel, 20),
         "-c:a",
         "aac",
         "-b:a",
@@ -552,6 +540,7 @@ def concat_chain(
     log: Optional[Callable[[str], None]] = None,
     delta: Optional[dict] = None,
     ss: Optional[list[float]] = None,
+    encode_accel: str = "auto",
 ) -> None:
     """通用 N 片段拼接：转场可用时链式 xfade，否则 concat 滤镜硬接。
     delta：差异化参数（画面微调），并入拼接链不增加转码次数。
@@ -561,7 +550,7 @@ def concat_chain(
         raise MediaError("拼接至少需要两个片段。")
     if n == 2:
         concat_two(clips[0], clips[1], dst, durations[0], durations[1],
-                   cancel_event, pause_event, transition_type, transition_duration, log, delta, ss)
+                   cancel_event, pause_event, transition_type, transition_duration, log, delta, ss, encode_accel=encode_accel)
         return
     inputs: list[str] = []
     for i, clip in enumerate(clips):
@@ -622,12 +611,7 @@ def concat_chain(
             "[v]",
             "-map",
             "[a]",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
+            *_vcodec_args(encode_accel, 20),
             "-c:a",
             "aac",
             "-b:a",
@@ -693,6 +677,7 @@ def mix_bgm(
     bgm_duration: float = 0.0,
     audio_volume: float = 1.0,
     bgm_shift: float = 0.0,
+    encode_accel: str = "auto",
 ) -> None:
     shift = max(0.0, float(bgm_shift or 0.0))
     if shift > 0:
@@ -798,6 +783,7 @@ def burn_subtitles(
     cancel_event,
     pause_event,
     log: Optional[Callable[[str], None]] = None,
+    encode_accel: str = "auto",
 ) -> None:
     escaped = escape_filter_path(srt)
     style = (
@@ -813,12 +799,7 @@ def burn_subtitles(
         src,
         "-vf",
         vf,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
+        *_vcodec_args(encode_accel, 20),
         "-c:a",
         "copy",
         dst,
@@ -839,6 +820,7 @@ def apply_watermark(
     position: str = "右下角",
     scale: float = 0.15,
     opacity: float = 0.6,
+    encode_accel: str = "auto",
 ) -> None:
     if mode == "角落水印":
         target_w = max(40, int(width * max(0.05, min(0.6, scale))))
@@ -875,12 +857,7 @@ def apply_watermark(
         "[v]",
         "-map",
         "0:a?",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
+        *_vcodec_args(encode_accel, 20),
         "-c:a",
         "copy",
         dst,
@@ -968,6 +945,30 @@ def build_combinations(
     return batch[:count]
 
 
+def has_nvenc() -> bool:
+    """探测当前 ffmpeg 是否支持 h264_nvenc（结果缓存）。"""
+    if not hasattr(has_nvenc, "_cache"):
+        try:
+            p = subprocess.run(
+                [_ffmpeg(), "-hide_banner", "-encoders"],
+                capture_output=True, text=True, timeout=30,
+            )
+            has_nvenc._cache = "h264_nvenc" in (p.stdout or "")
+        except Exception:
+            has_nvenc._cache = False
+    return has_nvenc._cache
+
+
+def _vcodec_args(accel: str, crf: int) -> list:
+    """按加速模式返回视频编码参数（accel: cpu / nvenc / auto）。
+    NVENC 用恒定质量(CQ)模式，qp 从 x264 crf 近似映射（qp≈crf+2）。"""
+    use_nvenc = accel == "nvenc" or (accel == "auto" and has_nvenc())
+    if use_nvenc:
+        return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "constqp", "-qp", str(min(31, crf + 2))]
+    return ["-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf)]
+
+
+
 @dataclass
 class JobConfig:
     head_folder: str
@@ -1012,6 +1013,7 @@ class JobConfig:
     watermark_scale: float = 0.15
     watermark_opacity: float = 0.6
     workers: int = 2
+    encode_accel: str = "auto"
 
 
 @dataclass
@@ -1529,11 +1531,11 @@ def _process_one_combo(
 
         normalize_clip(
             head, head_norm, width, height, head_info["duration"], head_info["has_audio"],
-            cancel_event, pause_event, log, config.normalize_audio, config.fit_mode,
+            cancel_event, pause_event, log, config.normalize_audio, config.fit_mode, encode_accel=config.encode_accel,
         )
         normalize_clip(
             tail, tail_norm, width, height, tail_info["duration"], tail_info["has_audio"],
-            cancel_event, pause_event, log, config.normalize_audio, config.fit_mode,
+            cancel_event, pause_event, log, config.normalize_audio, config.fit_mode, encode_accel=config.encode_accel,
         )
 
         clips = [head_norm]
@@ -1546,7 +1548,7 @@ def _process_one_combo(
             middle_norm = str(tempdir / f"middle_norm_{i}.mp4")
             normalize_clip(
                 middle, middle_norm, width, height, middle_info["duration"], middle_info["has_audio"],
-                cancel_event, pause_event, log, config.normalize_audio, config.fit_mode,
+                cancel_event, pause_event, log, config.normalize_audio, config.fit_mode, encode_accel=config.encode_accel,
             )
             clips.append(middle_norm)
             durations.append(probe_media(middle_norm)["duration"])
@@ -1566,7 +1568,7 @@ def _process_one_combo(
                 concat_two(
                     clips[0], clips[1], concat_path,
                     eff_durations[0], eff_durations[1],
-                    cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets,
+                    cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets, encode_accel=config.encode_accel,
                 )
             else:
                 # 无转场且素材已统一归一化，使用流复制快路径
@@ -1574,7 +1576,7 @@ def _process_one_combo(
         else:
             concat_chain(
                 clips, concat_path, eff_durations,
-                cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets,
+                cancel_event, pause_event, t_type, t_duration, log, delta, ss_offsets, encode_accel=config.encode_accel,
             )
 
         total_duration = sum(eff_durations)
@@ -1612,6 +1614,7 @@ def _process_one_combo(
                 fade=config.bgm_fade, ducking=config.bgm_ducking, bgm_duration=bgm_duration,
                 audio_volume=float(config.audio_volume),
                 bgm_shift=bgm_shift,
+            encode_accel=config.encode_accel,
             )
             current = mixed
 
@@ -1623,7 +1626,7 @@ def _process_one_combo(
             srt_path = str(tempdir / "subtitle.srt")
             subtitle_plugin.generate_subtitles(head, tail, head_info["duration"], srt_path)
             subtitled = str(tempdir / "with_subtitle.mp4")
-            burn_subtitles(current, srt_path, subtitled, cancel_event, pause_event, log)
+            burn_subtitles(current, srt_path, subtitled, cancel_event, pause_event, log, encode_accel=config.encode_accel)
             current = subtitled
 
         if config.use_watermark:
@@ -1635,6 +1638,7 @@ def _process_one_combo(
                 cancel_event, pause_event, log,
                 mode=config.watermark_mode, position=config.watermark_position,
                 scale=config.watermark_scale, opacity=config.watermark_opacity,
+            encode_accel=config.encode_accel,
             )
             current = watermarked
 
