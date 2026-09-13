@@ -608,3 +608,76 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 
 .spin { animation: spin 1s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   去重差异化页（步骤 3）
+   ============================================================ */
+.dl-hero {
+  background: linear-gradient(135deg, var(--accent-soft), transparent 60%);
+  border: 1px solid var(--accent);
+  padding: var(--space-5);
+}
+.dl-hero-title {
+  font-size: 20px; font-weight: 700; color: var(--text);
+  letter-spacing: 0.5px;
+}
+.dl-hero-desc {
+  margin-top: var(--space-2);
+  font-size: 13px; line-height: 1.7; color: var(--text-2);
+  max-width: 640px;
+}
+
+/* 强度三档大按钮 */
+.dl-levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+.dl-level {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: var(--space-4);
+  border: 1.5px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-soft); cursor: pointer; text-align: left;
+  transition: all var(--speed);
+}
+.dl-level:hover { border-color: var(--line-strong); background: var(--card-hover); transform: translateY(-1px); }
+.dl-level.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.dl-dot {
+  width: 12px; height: 12px; border-radius: 999px; border: 2px solid var(--text-3);
+  transition: all var(--speed);
+}
+.dl-dot.light { border-color: var(--warn); background: var(--warn); opacity: 0.55; }
+.dl-dot.deep { border-color: var(--accent); background: var(--accent); }
+.dl-level.on .dl-dot.off { border-color: var(--text-2); }
+.dl-name { font-size: 15px; font-weight: 700; color: var(--text); }
+.dl-level.on .dl-name { color: var(--accent); }
+.dl-desc { font-size: 11.5px; line-height: 1.6; color: var(--text-3); }
+
+/* 维度选项卡 */
+.dl-opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+.dl-opt {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1.5px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-soft); cursor: pointer; transition: all var(--speed);
+}
+.dl-opt:hover { border-color: var(--line-strong); background: var(--card-hover); }
+.dl-opt.on { border-color: var(--success); background: var(--success-soft); }
+.dl-opt.disabled { opacity: 0.45; cursor: not-allowed; }
+.dl-check {
+  width: 18px; height: 18px; margin-top: 2px; flex: none;
+  accent-color: var(--success); cursor: pointer;
+}
+.dl-opt.disabled .dl-check { cursor: not-allowed; }
+.dl-opt-main { display: flex; flex-direction: column; gap: 4px; }
+.dl-opt-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.dl-opt.on .dl-opt-name { color: var(--success); }
+.dl-opt-desc { font-size: 11.5px; line-height: 1.6; color: var(--text-3); }
+
+/* 一键多版本 */
+.dl-versions { display: flex; flex-direction: column; gap: var(--space-2); }
+.dl-ver-num {
+  font-size: 26px; font-weight: 800; color: var(--accent);
+  font-family: var(--font-mono); min-width: 72px; text-align: right;
+}
+.dl-total { color: var(--accent); font-size: 14px; }

@@ -555,39 +555,53 @@
 
           <!-- ================= 步骤 3：去重 ================= -->
           <section v-show="step===3">
+            <div class="card dl-hero">
+              <div class="dl-hero-title">去重差异化</div>
+              <div class="dl-hero-desc">
+                平台按内容指纹（画面/音频/结构）判定重复视频。差异化让每条成片在画面、片段、音频上产生合理差异，降低同批投放被判重概率。
+              </div>
+            </div>
+
             <div class="card">
-              <div class="card-title"><span class="bar"></span>去重差异化</div>
-              <div class="card-hint" style="margin-bottom:10px">
-                平台按内容指纹（画面/音频/结构）判定重复视频。开启差异化后，每条成片在画面、片段、音频上产生合理差异，降低同批投放被判重概率。
+              <div class="card-title"><span class="bar"></span>差异化强度</div>
+              <div class="dl-levels">
+                <button v-for="lv in dedupeLevels" :key="lv.value" class="dl-level"
+                        :class="{on: params.dedupe_level===lv.value}"
+                        @click="params.dedupe_level=lv.value">
+                  <span class="dl-dot" :class="lv.value"></span>
+                  <span class="dl-name">{{ lv.label }}</span>
+                  <span class="dl-desc">{{ dedupeLevelHint[lv.value] }}</span>
+                </button>
               </div>
+            </div>
 
-              <div class="field">
-                <div class="field-label">差异化强度</div>
-                <div class="chip-row">
-                  <button v-for="lv in dedupeLevels" :key="lv.value" class="chip" :class="{on: params.dedupe_level===lv.value}"
-                          @click="params.dedupe_level=lv.value">{{ lv.label }}</button>
-                </div>
-                <div class="card-hint" style="margin-top:6px">{{ dedupeLevelHint }}</div>
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>差异化维度
+                <span class="card-hint" style="margin-left:8px">可多选 · 关闭差异化时不可用</span>
               </div>
-
-              <div class="field">
-                <div class="field-label">差异化维度（可多选）</div>
-                <div class="opt-grid">
-                  <label class="opt-item" v-for="o in dedupeOptions" :key="o.key">
-                    <input type="checkbox" :disabled="params.dedupe_level==='off'" v-model="params.dedupe_options[o.key]">
-                    <span class="opt-name">{{ o.name }}</span>
-                    <span class="opt-desc">{{ o.desc }}</span>
-                  </label>
-                </div>
+              <div class="dl-opts">
+                <label v-for="o in dedupeOptions" :key="o.key" class="dl-opt"
+                       :class="{on: params.dedupe_options[o.key], disabled: params.dedupe_level==='off'}">
+                  <input type="checkbox" :disabled="params.dedupe_level==='off'" v-model="params.dedupe_options[o.key]" class="dl-check">
+                  <span class="dl-opt-main">
+                    <span class="dl-opt-name">{{ o.name }}</span>
+                    <span class="dl-opt-desc">{{ o.desc }}</span>
+                  </span>
+                </label>
               </div>
+            </div>
 
-              <div class="field">
-                <div class="field-label">一键多版本（每条出 N 个差异化版本）</div>
+            <div class="card">
+              <div class="card-title"><span class="bar"></span>一键多版本</div>
+              <div class="dl-versions">
                 <div class="range-wrap">
                   <input type="range" min="1" max="5" step="1" v-model.number="params.dedupe_versions">
-                  <span class="range-val">{{ params.dedupe_versions }} 版</span>
+                  <span class="dl-ver-num">{{ params.dedupe_versions }} 版</span>
                 </div>
-                <div class="card-hint" style="margin-top:6px">版本数 × 出片数量 = 实际生成条数（如 10 条 × 2 版 = 20 条）。各版本差异化参数不同，投放素材互不重复。</div>
+                <div class="card-hint" style="margin-top:8px">
+                  出片 {{ params.count }} 条 × {{ params.dedupe_versions }} 版 = 实际生成
+                  <b class="dl-total">{{ params.count * params.dedupe_versions }}</b> 条，各版本差异化参数不同，投放素材互不重复。
+                </div>
               </div>
             </div>
           </section>
