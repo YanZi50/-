@@ -922,10 +922,12 @@ class Handler(BaseHTTPRequestHandler):
         # 4 组合数提示
         try:
             combos = self._count_combos(config)
+            versions = max(1, int(getattr(config, "dedupe_versions", 1) or 1))
+            total = config.count * versions
             if config.count > combos:
-                add("warn", "生成数量", f"请求 {config.count} 条，素材最多 {combos} 种不同组合，超出部分将重复组合")
+                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，超出部分将重复组合")
             else:
-                add("ok", "生成数量", f"{config.count} 条，素材可组合 {combos} 种")
+                add("ok", "生成数量", f"{config.count} 条 × {versions} 版 = 共 {total} 条，素材可组合 {combos} 种")
         except Exception:
             pass
 

@@ -165,6 +165,14 @@ const pageDesc = computed(() => ({
   4: '预检素材、批量生成、查看结果与历史',
 }[state.step]));
 
+/* ---------- 产出概览（预检后展示） ---------- */
+const yieldTotal = computed(() => state.params.count * state.params.dedupe_versions);
+const dedupeOn = computed(() => state.params.dedupe_level !== 'off');
+const dedupeLevelLabel = computed(() => {
+  const lv = dedupeLevels.find((l) => l.value === state.params.dedupe_level);
+  return lv ? lv.label : '';
+});
+
 /* ---------- 水印滑块 ---------- */
 const watermarkScalePct = computed({
   get: () => Math.round(state.params.watermark_scale * 100),
@@ -823,6 +831,7 @@ createApp({
       ...Vue.toRefs(state),
       state, pageTitle, pageDesc,
       transitionOptions, dedupeLevels, dedupeOptions, dedupeLevelHint, watermarkScalePct, watermarkOpacityPct,
+      yieldTotal, dedupeOn, dedupeLevelLabel,
       progressPct, logHtml, poolPickedCount, resultRows,
       toggleTheme, toggleChip, randomizeSeed,
       selectFolder, pickWatermark,

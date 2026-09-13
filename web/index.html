@@ -625,6 +625,24 @@
                   <span v-else class="health-badge good">全部通过</span>
                   <span class="health-recheck" @click="precheck">重新体检</span>
                 </div>
+                <div class="yield-panel">
+                  <div class="yield-cell">
+                    <span class="yield-label">基础出片</span>
+                    <span class="yield-num">{{ params.count }} 条</span>
+                  </div>
+                  <div class="yield-cell">
+                    <span class="yield-label">差异化</span>
+                    <span class="yield-num" :class="dedupeOn ? 'accent' : ''">{{ dedupeOn ? '已开启 · ' + dedupeLevelLabel : '未开启' }}</span>
+                  </div>
+                  <div class="yield-cell" v-if="dedupeOn">
+                    <span class="yield-label">每条版本</span>
+                    <span class="yield-num">{{ params.dedupe_versions }} 版</span>
+                  </div>
+                  <div class="yield-cell" :class="{strong: dedupeOn}">
+                    <span class="yield-label">实际生成</span>
+                    <span class="yield-num total">{{ yieldTotal }} 条</span>
+                  </div>
+                </div>
                 <div class="health-items">
                   <div v-for="(it, i) in health.items" :key="i" class="health-item" :class="it.level">
                     <span class="health-dot"></span>
