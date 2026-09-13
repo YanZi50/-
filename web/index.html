@@ -711,6 +711,28 @@
                 <button class="btn plain" @click="retryFailed" :disabled="job.running || !job.failed">重试失败项 ({{ job.failed }})</button>
               </div>
 
+              <div class="card queue-card" style="margin-top:14px; padding:12px 14px">
+                <div class="card-title" style="margin-bottom:8px"><span class="bar"></span>任务队列
+                  <span class="card-hint" style="margin-left:8px">排队多批配置，当前任务完成后自动依次执行；重启服务后队列清空</span>
+                </div>
+                <div class="queue-add" style="display:flex; gap:8px; flex-wrap:wrap">
+                  <input class="input" style="flex:1; min-width:200px" v-model="queueLabel" placeholder="批次名称，如：A组-横屏-15s（留空自动编号）">
+                  <button class="btn soft" @click="addToQueue">加入队列</button>
+                  <button v-if="queue.length" class="btn danger" @click="clearQueue">清空队列</button>
+                </div>
+                <div v-if="queue.length" class="queue-list" style="margin-top:8px; display:flex; flex-direction:column; gap:6px">
+                  <div v-for="q in queue" :key="q.id" class="queue-item" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:8px">
+                    <div style="flex:1; min-width:0">
+                      <div style="font-weight:600">{{ q.label }}</div>
+                      <div class="card-hint" style="font-size:12px">{{ q.payload.count || 0 }} 条 × {{ q.payload.dedupe_versions || 1 }} 版 · {{ q.payload.resolution || '-' }} · 去重{{ q.payload.dedupe_level === 'off' ? '关' : '开' }} · {{ q.payload.duration_mode || '-' }}</div>
+                    </div>
+                    <span class="badge wait">等待中</span>
+                    <button class="btn plain" @click="removeFromQueue(q.id)">移除</button>
+                  </div>
+                </div>
+                <div v-else class="card-hint" style="margin-top:6px">队列为空</div>
+              </div>
+
               <div class="progress-wrap">
                 <div class="progress-inner" :style="{width: progressPct+'%'}"></div>
               </div>

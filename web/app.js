@@ -101,6 +101,8 @@ const state = reactive({
   previewTrans: 'fade',
   resultExpanded: false,
   similarPairs: [],   // 本次任务输出疑似重复对（感知哈希查重）
+  queue: [],          // 待执行任务队列
+  queueLabel: '',
   taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
   snapOpen: false,
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
@@ -874,6 +876,36 @@ async function loadSimilar() {
   } catch (e) { /* 服务未就绪忽略 */ }
 }
 
+async function loadQueue() {
+  try {
+    const s = await api('/api/queue/list');
+    state.queue = (s && s.queue) || [];
+  } catch (e) { /* 服务未就绪忽略 */ }
+}
+
+async function addToQueue() {
+  const cfg = collectConfig();
+  if (!cfg) return;
+  const label = state.queueLabel.trim() || '';
+  const r = await api('/api/queue/add', { label, ...cfg });
+  if (r && r.ok) {
+    state.queueLabel = '';
+    showMsg(r.queue_len ? `已加入队列，共 ${r.queue_len} 项等待` : '已加入队列', 'success');
+    loadQueue();
+  } else if (r && r.error) showMsg(r.error, 'error');
+}
+
+async function removeFromQueue(id) {
+  await api('/api/queue/remove', { id });
+  loadQueue();
+}
+
+async function clearQueue() {
+  await api('/api/queue/clear', {});
+  showMsg('队列已清空', 'info');
+  loadQueue();
+}
+
 createApp({
   setup() {
     onMounted(() => {
@@ -889,6 +921,7 @@ createApp({
       }).catch(() => { /* 服务未就绪由轮询提示 */ });
       loadHistory();
       loadSimilar();
+      loadQueue();
       setInterval(poll, 1000);
       poll();
     });
@@ -913,6 +946,7 @@ createApp({
       previewTransClass, previewTransName,
       visibleRows, toggleResults,
       deepDedupeOptions, deepStrengths,
+      addToQueue, removeFromQueue, clearQueue,
     };
   },
 }).mount('#app');

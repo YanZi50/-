@@ -557,6 +557,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .badge.fail { background: var(--danger-soft); color: var(--danger); }
 .badge.skip { background: var(--bg-soft); color: var(--text-3); }
 .badge.run { background: var(--accent-soft); color: var(--accent); }
+.badge.wait { background: var(--bg-soft); color: var(--text-2); border: 1px dashed var(--line); }
 
 /* ---------- 预览 ---------- */
 .video-box { margin-top: var(--space-3); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #000; }

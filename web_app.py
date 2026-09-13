@@ -159,6 +159,8 @@ class AppState:
         self.samples: list[tuple[float, int]] = []
         self.interrupted: dict | None = None
         self.similar_pairs: list[dict] = []  # 本次任务输出疑似重复对
+        self.queue: list[dict] = []          # 待执行队列 [{id, label, payload}]
+        self.queue_seq: int = 0
 
     def add_log(self, message: str) -> None:
         with self.lock:
@@ -461,6 +463,9 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/similar":
             self._send_json({"ok": True, "pairs": STATE.similar_pairs})
             return
+        if route == "/api/queue/list":
+            self._send_json({"ok": True, "queue": STATE.queue, "running": STATE.running})
+            return
         if route == "/api/debug":
             import video_engine
             self._send_json({
@@ -632,6 +637,16 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/cancel":
             STATE.cancel_event.set()
             STATE.add_log("已请求取消")
+            self._send_json({"ok": True})
+            return
+        if route == "/api/queue/add":
+            self._queue_add()
+            return
+        if route == "/api/queue/remove":
+            self._queue_remove()
+            return
+        if route == "/api/queue/clear":
+            STATE.queue = []
             self._send_json({"ok": True})
             return
         if route == "/api/pause":
@@ -837,16 +852,22 @@ class Handler(BaseHTTPRequestHandler):
         def progress(current: int, total_: int) -> None:
             STATE.set_progress(current, total_)
 
-        def worker() -> None:
+        def run_one_batch(cfg: JobConfig, lbl: str, m: str, f_items: list[dict]) -> bool:
+            """执行一批任务，返回是否继续处理队列（False 表示被取消/异常终止）。"""
+            total = len(f_items) if m == "retry" else cfg.count
+            STATE.begin(total)
+            STATE.add_log(f"{lbl}开始，共 {total} 条")
+            if m == "batch":
+                _save_snapshot(cfg, lbl, total)
             try:
-                if mode == "retry":
+                if m == "retry":
                     result = process_failed_items(
-                        config, failed_items or [], STATE.cancel_event, STATE.pause_event,
+                        cfg, f_items or [], STATE.cancel_event, STATE.pause_event,
                         log=log, progress=progress,
                     )
                 else:
                     result = process_batch(
-                        config, STATE.cancel_event, STATE.pause_event, log=log, progress=progress,
+                        cfg, STATE.cancel_event, STATE.pause_event, log=log, progress=progress,
                     )
                 STATE.result = result
                 STATE.last_failed_items = list(result.failed_items)
@@ -863,24 +884,47 @@ class Handler(BaseHTTPRequestHandler):
                     STATE.similar_pairs = []
                     STATE.add_log(f"产物查重失败：{exc}")
                 record = {
-                    "type": mode,
-                    "config": asdict(config),
+                    "type": m,
+                    "config": asdict(cfg),
                     "success": result.success,
                     "skipped": result.skipped,
                     "failed": result.failed,
                     "cancelled": result.cancelled,
                 }
                 save_history(record)
+                return not result.cancelled
             except MediaError as exc:
                 STATE.error = str(exc)
                 STATE.add_log(str(exc))
+                return False
             except Exception as exc:
                 STATE.error = f"程序异常：{exc}"
                 STATE.add_log(STATE.error)
+                return False
             finally:
-                STATE.running = False
                 STATE.end()
                 _clear_snapshot()
+
+        def worker() -> None:
+            cur_cfg, cur_label, cur_mode, cur_failed = config, label, mode, failed_items
+            try:
+                keep_going = True
+                while keep_going:
+                    keep_going = run_one_batch(cur_cfg, cur_label, cur_mode, cur_failed)
+                    if not keep_going or not STATE.queue:
+                        break
+                    if STATE.cancel_event.is_set():
+                        break
+                    nxt = STATE.queue.pop(0)
+                    raw = nxt["payload"]
+                    nxt_cfg = self._make_config(raw)
+                    if isinstance(nxt_cfg, str):
+                        STATE.add_log(f"队列：跳过「{nxt['label']}」({nxt_cfg})")
+                        continue
+                    cur_cfg, cur_label, cur_mode, cur_failed = nxt_cfg, nxt["label"], "batch", []
+                    STATE.add_log(f"队列：开始下一批「{cur_label}」")
+            finally:
+                STATE.running = False
 
         STATE.worker = threading.Thread(target=worker, daemon=True)
         STATE.worker.start()
@@ -913,6 +957,25 @@ class Handler(BaseHTTPRequestHandler):
     def _discard_interrupted(self) -> None:
         _clear_snapshot()
         STATE.interrupted = None
+        self._send_json({"ok": True})
+
+    def _queue_add(self) -> None:
+        """加入队列：保存配置快照，当前任务完成后自动执行。"""
+        payload = self._read_json()
+        config = self._make_config(payload)
+        if isinstance(config, str):
+            self._send_json({"ok": False, "error": config})
+            return
+        label = str(payload.get("label") or f"批次 {STATE.queue_seq + 1}").strip()
+        STATE.queue_seq += 1
+        STATE.queue.append({"id": STATE.queue_seq, "label": label, "payload": payload})
+        STATE.add_log(f"已加入队列（{len(STATE.queue)} 项等待）：{label}")
+        self._send_json({"ok": True, "queue_len": len(STATE.queue)})
+
+    def _queue_remove(self) -> None:
+        payload = self._read_json()
+        qid = payload.get("id")
+        STATE.queue = [q for q in STATE.queue if q.get("id") != qid]
         self._send_json({"ok": True})
 
     # ----------------------------------------------------------------
