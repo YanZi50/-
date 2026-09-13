@@ -706,3 +706,38 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   font-family: var(--font-mono);
 }
 .yield-cell.strong { border: 1px solid var(--accent); background: var(--accent-soft); }
+
+/* ============================================================
+   本次任务参数快照（生成中改参数不影响任务，展示实际使用参数）
+   ============================================================ */
+.snap-panel {
+  margin: var(--space-3) 0;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.snap-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-soft);
+  cursor: pointer; font-size: 13px; font-weight: 700; color: var(--text-2);
+  transition: background var(--speed);
+}
+.snap-head:hover { background: var(--card-hover); color: var(--text); }
+.snap-toggle { font-size: 11.5px; color: var(--text-3); font-weight: 500; }
+.snap-body { padding: var(--space-3) var(--space-4); }
+.snap-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-2);
+}
+.snap-row {
+  display: flex; align-items: baseline; gap: var(--space-2);
+  padding: 4px 0; border-bottom: 1px dashed var(--line);
+  min-width: 0;
+}
+.snap-row:last-child { border-bottom: none; }
+.snap-label { flex: none; font-size: 11.5px; color: var(--text-3); width: 62px; }
+.snap-value {
+  font-size: 12.5px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

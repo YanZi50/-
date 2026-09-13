@@ -88,6 +88,8 @@ const state = reactive({
   healthChecking: false,
   previewTrans: 'fade',
   resultExpanded: false,
+  taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
+  snapOpen: false,
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
@@ -171,6 +173,39 @@ const dedupeOn = computed(() => state.params.dedupe_level !== 'off');
 const dedupeLevelLabel = computed(() => {
   const lv = dedupeLevels.find((l) => l.value === state.params.dedupe_level);
   return lv ? lv.label : '';
+});
+
+/* ---------- 生成中参数修改提示（不阻断操作，仅告知下次任务生效） ---------- */
+let lastWarnTs = 0;
+function warnIfRunning() {
+  if (!state.job.running) return;
+  const now = Date.now();
+  if (now - lastWarnTs < 2500) return; // 防抖：2.5s 内只提示一次
+  lastWarnTs = now;
+  showMsg('生成中：当前修改将在下次任务生效，本次任务参数已锁定', 'warn');
+}
+
+/* ---------- 本次任务参数快照（展示用） ---------- */
+const snapRows = computed(() => {
+  const s = state.taskSnapshot;
+  if (!s) return [];
+  const rows = [];
+  const v = (s.dedupe_level !== 'off' ? s.dedupe_versions || 1 : 1);
+  rows.push({ label: '出片', value: `${s.count || 0} 条` + (v > 1 ? ` × ${v} 版 = ${(s.count || 0) * v} 条` : '') });
+  rows.push({ label: '并发', value: `${s.workers || 1} 路` });
+  rows.push({ label: '分辨率', value: s.resolution || '-' });
+  rows.push({ label: '目标时长', value: s.duration_mode || '不限制' });
+  rows.push({ label: '画面适配', value: s.fit_mode || '黑边' });
+  rows.push({ label: '转场', value: s.transition_mode || '不使用' });
+  rows.push({ label: 'BGM', value: s.bgm_mode || '不使用' });
+  rows.push({ label: '水印', value: s.use_watermark ? (s.watermark_mode || '') + (s.watermark_path ? ' · ' + String(s.watermark_path).split(/[\\/]/).pop() : '') : '关闭' });
+  rows.push({ label: '去重', value: s.dedupe_level === 'off' ? '未开启' : ((dedupeLevels.find((l) => l.value === s.dedupe_level) || {}).label || s.dedupe_level) + ` · 版本×${s.dedupe_versions || 1}` });
+  rows.push({ label: '命名模板', value: s.output_name_template || '-' });
+  rows.push({ label: '开头素材', value: s.head_folder || '-' });
+  rows.push({ label: '结尾素材', value: s.tail_folder || '-' });
+  rows.push({ label: '中间素材池', value: (s.middle_pools || []).length ? (s.middle_pools || []).length + ' 个池' : '无' });
+  rows.push({ label: '输出目录', value: s.output_folder || '-' });
+  return rows;
 });
 
 /* ---------- 水印滑块 ---------- */
@@ -687,6 +722,7 @@ async function startJob() {
     body: JSON.stringify(payload),
   });
   if (!data.ok) { showMsg(data.error || '启动失败', 'error'); return; }
+  state.taskSnapshot = { ...payload };  // 参数快照：生成期间改动参数不影响本次任务，此处留档核对
   state.outputFolder = payload.output_folder;
   state.job = { ...state.job, running: true, done: false, current: 0, total: payload.count, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
   state.previewUrl = '';
@@ -791,6 +827,10 @@ async function poll() {
     } else if (!s.interrupted && state.interrupted) {
       state.interrupted = false;
     }
+    // 刷新页面后从后端恢复参数快照（断点续跑/重试用原任务参数，快照保持一致）
+    if (s.last_config && !state.taskSnapshot) {
+      state.taskSnapshot = s.last_config;
+    }
     if (!s.running && state.job.done === false && (s.success > 0 || s.failed > 0 || s.skipped > 0 || s.cancelled)) {
       state.job.done = true;
       if (s.success_items && s.success_items[0] && state.previewUrl === '' && state.job.total === 1) {
@@ -831,7 +871,7 @@ createApp({
       ...Vue.toRefs(state),
       state, pageTitle, pageDesc,
       transitionOptions, dedupeLevels, dedupeOptions, dedupeLevelHint, watermarkScalePct, watermarkOpacityPct,
-      yieldTotal, dedupeOn, dedupeLevelLabel,
+      yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows,
       progressPct, logHtml, poolPickedCount, resultRows,
       toggleTheme, toggleChip, randomizeSeed,
       selectFolder, pickWatermark,

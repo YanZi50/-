@@ -69,7 +69,7 @@
           </div>
 
           <!-- ================= 步骤 1：素材 ================= -->
-          <section v-show="step===1">
+          <section v-show="step===1" @click="warnIfRunning">
             <div class="btn-row" style="margin-bottom:12px">
               <button class="btn plain" @click="expandAll">全部展开</button>
               <button class="btn plain" @click="collapseAll">全部收起</button>
@@ -267,7 +267,7 @@
           </section>
 
           <!-- ================= 步骤 2：参数 ================= -->
-          <section v-show="step===2">
+          <section v-show="step===2" @click="warnIfRunning">
             <div class="card">
               <div class="card-title"><span class="bar"></span>输出设置</div>
               <div class="grid-2">
@@ -551,7 +551,7 @@
           </section>
 
           <!-- ================= 步骤 3：去重 ================= -->
-          <section v-show="step===3">
+          <section v-show="step===3" @click="warnIfRunning">
             <div class="card dl-hero">
               <div class="dl-hero-title">去重差异化</div>
               <div class="dl-hero-desc">
@@ -648,6 +648,21 @@
                     <span class="health-dot"></span>
                     <b>{{ it.scope }}</b>
                     <span class="health-msg">{{ it.msg }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- 本次任务参数快照：生成期间改参数不影响本次任务，此处核对实际使用的参数 -->
+              <div v-if="taskSnapshot" class="snap-panel">
+                <div class="snap-head" @click="snapOpen=!snapOpen">
+                  <span>本次生成参数</span>
+                  <span class="snap-toggle">{{ snapOpen ? '收起 ▲' : '展开 ▼' }}</span>
+                </div>
+                <div v-if="snapOpen" class="snap-body">
+                  <div class="snap-grid">
+                    <div v-for="r in snapRows" :key="r.label" class="snap-row">
+                      <span class="snap-label">{{ r.label }}</span>
+                      <span class="snap-value">{{ r.value }}</span>
+                    </div>
                   </div>
                 </div>
               </div>

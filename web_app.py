@@ -228,6 +228,7 @@ class AppState:
                 "success_items": self.result.success_items if self.result else [],
                 "error": self.error,
                 "interrupted": self.interrupted,
+                "last_config": self._last_config_preview(),
             }
             samples = list(self.samples)
             started_at = self.started_at
@@ -241,6 +242,31 @@ class AppState:
                 data["speed_per_sec"] = rate
                 data["eta_seconds"] = (total - current) / rate
         return data
+
+    def _last_config_preview(self) -> dict | None:
+        """本次/上次任务的参数快照（前端展示用，精选字段）。"""
+        cfg = self.last_config
+        if cfg is None:
+            return None
+        return {
+            "count": cfg.count,
+            "workers": cfg.workers,
+            "resolution": cfg.resolution,
+            "duration_mode": cfg.duration_mode,
+            "fit_mode": cfg.fit_mode,
+            "transition_mode": cfg.transition_mode,
+            "bgm_mode": cfg.bgm_mode,
+            "use_watermark": cfg.use_watermark,
+            "watermark_mode": cfg.watermark_mode,
+            "watermark_path": cfg.watermark_path,
+            "dedupe_level": cfg.dedupe_level,
+            "dedupe_versions": cfg.dedupe_versions,
+            "output_name_template": cfg.output_name_template,
+            "head_folder": cfg.head_folder,
+            "tail_folder": cfg.tail_folder,
+            "output_folder": cfg.output_folder,
+            "middle_pools": list(cfg.middle_pools or []),
+        }
 
 
 def _run_ps_file(script_body: str, timeout: int = 300) -> str:
@@ -925,7 +951,7 @@ class Handler(BaseHTTPRequestHandler):
             versions = max(1, int(getattr(config, "dedupe_versions", 1) or 1))
             total = config.count * versions
             if config.count > combos:
-                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，超出部分将重复组合")
+                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，超出部分按可用组合生成（不重复出片）")
             else:
                 add("ok", "生成数量", f"{config.count} 条 × {versions} 版 = 共 {total} 条，素材可组合 {combos} 种")
         except Exception:
