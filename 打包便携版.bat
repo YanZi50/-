@@ -5,12 +5,13 @@ cd /d "%~dp0"
 set PY=C:\Users\admin\AppData\Local\Programs\Python\Python312\python.exe
 if not exist "%PY%" set PY=python
 
-echo [1/3] 用 PyInstaller 打包（onedir + 无控制台）...
+echo [1/3] 用 PyInstaller 打包（onedir + 无控制台 + 应用图标）...
 "%PY%" -m PyInstaller --noconfirm --clean --onedir --noconsole ^
   --name "信息流素材一键拼接" ^
   --add-data "web;web" ^
   --collect-submodules imageio_ffmpeg ^
   --exclude-module faster_whisper ^
+  --icon app.ico ^
   web_app.py
 if errorlevel 1 ( echo 打包失败 & pause & exit /b 1 )
 
