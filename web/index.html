@@ -767,6 +767,7 @@
               </div>
               <div class="job-stats" v-if="job.running || job.done">
                 <span>进度 <b>{{ job.current }}/{{ job.total }}</b>（{{ progressPct }}%）</span>
+                <span v-if="job.running && currentMaterial" class="now-matter" title="正在生成的素材组合">正在 <b>{{ currentMaterial }}</b></span>
                 <span v-if="job.speed!=null">速度 <b>{{ job.speed.toFixed(1) }}</b> 条/分</span>
                 <span v-if="job.eta!=null">预计剩余 <b>{{ fmtEta(job.eta) }}</b></span>
                 <template v-if="job.done">
@@ -858,12 +859,16 @@
               </div>
               <div v-if="history.length">
                 <div class="history-scroll">
-                  <div class="history-item" v-for="h in history" :key="h._file" @click="loadFromHistory(h)">
-                    <div>
+                  <div class="history-item" v-for="h in history" :key="h._file">
+                    <div style="flex:1;min-width:0" @click="loadFromHistory(h)">
                       <div class="history-desc">{{ h._file }} · {{ h.type }}</div>
                       <div class="history-meta">{{ h.config.head_folder }} → {{ h.config.output_folder }}</div>
+                      <div class="history-meta">
+                        成功 {{ h.success }} / 失败 {{ h.failed }}<template v-if="h.skipped"> / 跳过 {{ h.skipped }}</template>
+                        <template v-if="h.elapsed_sec"> · 耗时 {{ fmtDuration(h.elapsed_sec) }}</template>
+                      </div>
                     </div>
-                    <div class="history-meta">成功 {{ h.success }} / 失败 {{ h.failed }}<template v-if="h.skipped"> / 跳过 {{ h.skipped }}</template></div>
+                    <button class="btn plain" style="flex-shrink:0;padding:2px 10px;font-size:12px" @click="rerunFromHistory(h)" title="载入配置并跳到生成与结果页">⏵ 重跑</button>
                   </div>
                 </div>
               </div>

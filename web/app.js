@@ -166,6 +166,15 @@ const progressPct = computed(() => {
 const logHtml = computed(() => escapeHtml(state.job.logs.join('\n')));
 const warnsText = computed(() => (state.health && state.health.warns || []).map((w) => w.scope + '：' + w.msg).join('\n'));
 const poolPickedCount = computed(() => state.middlePools.reduce((s, p) => s + p.items.length, 0));
+const currentMaterial = computed(() => {
+  const logs = state.job.logs || [];
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const m = String(logs[i]).match(/\[(\d+)\]\s*开始生成：(.+)/);
+    if (m) return m[2].trim();
+  }
+  return '';
+});
+
 const resultRows = computed(() => {
   const rows = [];
   (state.job.success_items || []).forEach((it) => rows.push({
@@ -694,6 +703,11 @@ function loadFromHistory(h) {
   state.step = 2;
   showMsg('已载入历史任务配置', 'success');
 }
+function rerunFromHistory(h) {
+  applyConfig(h.config || {});
+  state.step = 4;
+  showMsg('已载入历史任务配置，请在生成与结果页确认后开始', 'success');
+}
 
 /* ---------- 预检 ---------- */
 async function precheck(silent = false) {
@@ -1041,11 +1055,11 @@ createApp({
       toggleExpand, expandAll, collapseAll,
       filteredMats, filteredPoolFiles, toggleSound,
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
-      loadHistory, clearHistory, loadFromHistory,
+      loadHistory, clearHistory, loadFromHistory, rerunFromHistory, fmtDuration,
       goStep,
       precheck, startJob, previewJob, togglePause, cancelJob, retryFailed,
       resumeJob, discardInterrupted,
-      downloadZip, Math, openOutputFolder, copyErrorText, fmtSize,
+      downloadZip, Math, openOutputFolder, copyErrorText, fmtSize, currentMaterial,
       previewTransClass, previewTransName,
       visibleRows, resultPageCount, goResultPage,
       visibleSimilar, simPageCount, goSimPage,

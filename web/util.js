@@ -74,3 +74,10 @@ function fmtSize(bytes) {
   if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
   return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
 }
+
+function fmtDuration(sec) {
+  const s = Math.max(0, Number(sec) || 0);
+  if (s < 60) return s.toFixed(0) + ' 秒';
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return m + ' 分 ' + r + ' 秒';
+}

@@ -1014,6 +1014,7 @@ class Handler(BaseHTTPRequestHandler):
                     "skipped": result.skipped,
                     "failed": result.failed,
                     "cancelled": result.cancelled,
+                    "elapsed_sec": round(max(0, time.time() - (STATE.started_at or time.time())), 1),
                 }
                 save_history(record)
                 # 记录最近任务实测速度（条/秒，含并发），供下次预检估算生成时间
