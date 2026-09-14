@@ -159,6 +159,7 @@ const state = reactive({
   interrupted: false,
   interruptedInfo: null,
   previewUrl: '',
+  previewRequested: false,
   outputFolder: '',
   outputFiles: [],
   materialZones: [
@@ -778,7 +779,10 @@ async function startJob() {
   if (!data.ok) { showMsg(data.error || '启动失败', 'error'); return; }
   state.taskSnapshot = { ...payload };  // 参数快照：生成期间改动参数不影响本次任务，此处留档核对
   state.outputFolder = payload.output_folder;
-  state.job = { ...state.job, running: true, done: false, current: 0, total: payload.count, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
+  // total 用后端实际将生成的条数（组合不足时不显示虚高的请求数）
+  const total = Number(data.total) > 0 ? Number(data.total) : Number(payload.count);
+  state.job = { ...state.job, running: true, done: false, current: 0, total, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
+  state.previewRequested = false; // 普通生成任务不自动显示预览
   state.previewUrl = '';
   showMsg('任务已启动', 'success');
 }
@@ -791,6 +795,7 @@ async function previewJob() {
   });
   if (!data.ok) { showMsg(data.error || '预览失败', 'error'); return; }
   state.job = { ...state.job, running: true, done: false, current: 0, total: 1, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
+  state.previewRequested = true; // 仅「生成预览」触发的单条任务完成后显示预览
   state.previewUrl = '';
   showMsg('预览生成中', 'info');
 }
@@ -889,10 +894,11 @@ async function poll() {
       state.job.done = true;
       state.resultPage = 1;
       state.simPage = 1;
-      if (s.success_items && s.success_items[0] && state.previewUrl === '' && state.job.total === 1) {
+      if (s.success_items && s.success_items[0] && state.previewRequested && state.job.total === 1) {
         const it = s.success_items[0];
         const m = String(it.output).match(/^(.+)[\\/]([^\\/]+)$/);
         if (m) state.previewUrl = '/api/download?folder=' + encodeURIComponent(m[1]) + '&name=' + encodeURIComponent(m[2]);
+        state.previewRequested = false;
       }
       refreshOutputFiles();
       loadHistory();

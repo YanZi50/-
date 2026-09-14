@@ -849,12 +849,7 @@ class Handler(BaseHTTPRequestHandler):
         STATE.running = True
         STATE.interrupted = None
         _clear_snapshot()  # 新任务开始，放弃旧的中断快照
-
-        total = len(failed_items) if mode == "retry" else config.count
-        STATE.begin(total)
-        STATE.add_log(f"{label}开始，共 {total} 条")
-        if mode == "batch":
-            _save_snapshot(config, label, total)
+        # 注意：总数/日志在 run_one_batch 内统一计算（与实际生成条数一致），这里不再重复 begin/log
 
         def log(message: str) -> None:
             STATE.add_log(message)
@@ -864,7 +859,15 @@ class Handler(BaseHTTPRequestHandler):
 
         def run_one_batch(cfg: JobConfig, lbl: str, m: str, f_items: list[dict]) -> bool:
             """执行一批任务，返回是否继续处理队列（False 表示被取消/异常终止）。"""
-            total = len(f_items) if m == "retry" else cfg.count
+            # 日志/进度总数与实际生成条数保持一致（去重开启时组合不足按组合数出片）
+            if m == "retry":
+                total = len(f_items or [])
+            elif cfg.fixed_head and cfg.fixed_tail:
+                total = 1
+            else:
+                _combos = self._count_combos(cfg)
+                _req = int(cfg.count) * max(1, int(getattr(cfg, "dedupe_versions", 1) or 1))
+                total = min(_req, _combos) if getattr(cfg, "dedupe_enabled", True) else _req
             STATE.begin(total)
             STATE.add_log(f"{lbl}开始，共 {total} 条")
             if m == "batch":
@@ -955,8 +958,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         STATE.similar_pairs = []  # 新任务开始，清除上次任务的疑似重复提示
         register_allowed_dir(config.output_folder)
+        total = self._actual_total(config)
         self._run_task(config, "任务", "batch")
-        self._send_json({"ok": True})
+        self._send_json({"ok": True, "total": total})
 
     def _resume(self) -> None:
         if STATE.running:
@@ -1042,16 +1046,17 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
-        # 4 组合数提示（去重开启时组合不足会少出片，去重关闭时可随机重复凑满）
+        # 4 组合数提示（提示与实际生成条数完全一致）
         try:
             combos = self._count_combos(config)
             versions = max(1, int(getattr(config, "dedupe_versions", 1) or 1))
             total = config.count * versions
+            actual = self._actual_total(config)
             dedupe_on = bool(getattr(config, "dedupe_enabled", True))
             if config.count > combos and dedupe_on:
-                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，去重开启时只生成 {combos} 条不重复（不会重复出片）；关闭去重可凑满 {total} 条（可能重复）")
+                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，实际将生成 {actual} 条（不重复出片，避免平台判重）；关闭去重可凑满 {total} 条（可能重复）")
             else:
-                add("ok", "生成数量", f"{config.count} 条 × {versions} 版 = 共 {total} 条，素材可组合 {combos} 种")
+                add("ok", "生成数量", f"{config.count} 条 × {versions} 版 = 共 {total} 条，实际将生成 {actual} 条")
         except Exception:
             pass
 
@@ -1090,8 +1095,9 @@ class Handler(BaseHTTPRequestHandler):
 
         # 6 预计生成时间：优先用最近任务实测速度（条/秒含并发），无历史时按编码方式保守估算
         eta_seconds: int = 0
+        actual_total = self._actual_total(config)
         try:
-            total_items = config.count * max(1, int(getattr(config, "dedupe_versions", 1) or 1))
+            total_items = actual_total
             workers = max(1, int(getattr(config, "workers", 1) or 1))
             accel = getattr(config, "encode_accel", "auto") or "auto"
             per_item = 2.5 if accel == "nvenc" else (12.0 if accel == "cpu" else 6.0)  # 秒/条
@@ -1103,7 +1109,7 @@ class Handler(BaseHTTPRequestHandler):
 
         errors = [i for i in items if i["level"] == "error"]
         warns = [i for i in items if i["level"] == "warn"]
-        return {"ok": not errors, "items": items, "errors": errors, "warns": warns, "report": report, "eta_seconds": eta_seconds}
+        return {"ok": not errors, "items": items, "errors": errors, "warns": warns, "report": report, "eta_seconds": eta_seconds, "actual_count": actual_total}
 
     def _ffmpeg_ok(self) -> bool:
         try:
@@ -1114,8 +1120,9 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
     def _count_combos(self, config: JobConfig) -> int:
-        head = len(scan_videos(config.head_folder))
-        tail = len(scan_videos(config.tail_folder))
+        # 与生成端完全一致：先按指纹去重再计数（重复拷贝算 1 个）
+        head = len(dedupe_by_fp(scan_videos(config.head_folder)))
+        tail = len(dedupe_by_fp(scan_videos(config.tail_folder)))
         if config.fixed_head and config.fixed_tail:
             return 1
         if config.fixed_head:
@@ -1123,6 +1130,16 @@ class Handler(BaseHTTPRequestHandler):
         if config.fixed_tail:
             return head
         return head * tail
+
+    def _actual_total(self, config: JobConfig) -> int:
+        """与生成端完全一致的最终出片数：固定头尾=1；去重开=min(请求,组合)；去重关=请求（可重复）。"""
+        if config.fixed_head and config.fixed_tail:
+            return 1
+        combos = self._count_combos(config)
+        req = int(config.count) * max(1, int(getattr(config, "dedupe_versions", 1) or 1))
+        if getattr(config, "dedupe_enabled", True):
+            return min(req, combos)
+        return req
 
     def _estimate_output_bytes(self, config: JobConfig, report: dict) -> int:
         """粗估输出体积：count × 单条时长 × 码率系数（保守估算，MB 级偏差可接受）。"""

@@ -695,7 +695,6 @@
                 </div>
               </div>
               <div class="btn-row">
-                <button class="btn soft" @click="precheck" :disabled="job.running">预检素材</button>
                 <button class="btn big success" @click="startJob" :disabled="job.running">{{ job.running ? '生成中…' : '开始生成' }}</button>
                 <button class="btn plain" @click="previewJob" :disabled="job.running">生成预览（1条）</button>
                 <button class="btn plain" @click="togglePause" :disabled="!job.running">{{ job.paused ? '继续' : '暂停' }}</button>
