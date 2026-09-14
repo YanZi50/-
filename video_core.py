@@ -177,6 +177,11 @@ TRANSITION_REGISTRY: dict[str, str] = {
     "horzopen": "水平打开", "horzclose": "水平关闭",
     "squeezeh": "水平挤压", "squeezev": "垂直挤压",
     "radial": "放射状",
+    "hlslice": "水平切片", "hrslice": "垂直切片",
+    "vuslice": "垂直切片(上)", "vdslice": "垂直切片(下)",
+    "hblur": "水平模糊",
+    "wipetl": "对角擦除(左上)", "wipetr": "对角擦除(右上)",
+    "fadegrays": "灰度淡变",
 }
 
 DEDUPE_REGISTRY: dict[str, dict] = {

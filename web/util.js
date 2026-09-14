@@ -49,6 +49,12 @@ function transitionClass(value) {
     vertopen: 'tp-vert', vertclose: 'tp-vert',
     horzopen: 'tp-horz', horzclose: 'tp-horz',
     squeezeh: 'tp-squeeze-h', squeezev: 'tp-squeeze-v',
+    radial: 'tp-radial',
+    hlslice: 'tp-hlslice', hrslice: 'tp-hrslice',
+    vuslice: 'tp-vuslice', vdslice: 'tp-vdslice',
+    hblur: 'tp-hblur',
+    wipetl: 'tp-wipe-tl', wipetr: 'tp-wipe-tr',
+    fadegrays: 'tp-fadegray',
   };
   return map[value] || 'tp-fade';
 }

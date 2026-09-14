@@ -545,6 +545,15 @@ input[type="range"]::-webkit-slider-thumb {
 .trans-stage.tp-horz .trans-a { animation: tp-horz-kf 2.4s ease-in-out infinite; }
 .trans-stage.tp-squeeze-h .trans-a { animation: tp-squeeze-h-kf 2.4s ease-in-out infinite; }
 .trans-stage.tp-squeeze-v .trans-a { animation: tp-squeeze-v-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-radial .trans-a { animation: tp-radial-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-hlslice .trans-a { animation: tp-hlslice-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-hrslice .trans-a { animation: tp-hrslice-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-vuslice .trans-a { animation: tp-vuslice-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-vdslice .trans-a { animation: tp-vdslice-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-hblur .trans-a { animation: tp-hblur-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-wipe-tl .trans-a { animation: tp-wipe-tl-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-wipe-tr .trans-a { animation: tp-wipe-tr-kf 2.4s ease-in-out infinite; }
+.trans-stage.tp-fadegray .trans-a { animation: tp-fadegray-kf 2.4s ease-in-out infinite; }
 
 @keyframes tp-fade-kf { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
 @keyframes tp-slide-l-kf { 0%, 45% { transform: translateX(0); } 55%, 100% { transform: translateX(-100%); } }
@@ -562,6 +571,15 @@ input[type="range"]::-webkit-slider-thumb {
 @keyframes tp-horz-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(0 50% 0 50%); } }
 @keyframes tp-squeeze-h-kf { 0%, 45% { transform: scaleX(1); } 55%, 100% { transform: scaleX(0); } }
 @keyframes tp-squeeze-v-kf { 0%, 45% { transform: scaleY(1); } 55%, 100% { transform: scaleY(0); } }
+@keyframes tp-radial-kf { 0%, 45% { clip-path: circle(150% at 50% 50%); } 55%, 100% { clip-path: circle(0% at 50% 50%); } }
+@keyframes tp-hlslice-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(50% 0 50% 0); } }
+@keyframes tp-hrslice-kf { 0%, 45% { clip-path: inset(0 0 0 0); } 55%, 100% { clip-path: inset(0 50% 0 50%); } }
+@keyframes tp-vuslice-kf { 0%, 45% { transform: translateY(0); } 55%, 100% { transform: translateY(-50%); } }
+@keyframes tp-vdslice-kf { 0%, 45% { transform: translateY(0); } 55%, 100% { transform: translateY(50%); } }
+@keyframes tp-hblur-kf { 0%, 45% { opacity: 1; filter: blur(0); } 55%, 100% { opacity: 0; filter: blur(26px); } }
+@keyframes tp-wipe-tl-kf { 0%, 45% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); } 55%, 100% { clip-path: polygon(0 0, 0 0, 100% 100%, 0 100%); } }
+@keyframes tp-wipe-tr-kf { 0%, 45% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); } 55%, 100% { clip-path: polygon(100% 0, 100% 0, 100% 100%, 0 100%); } }
+@keyframes tp-fadegray-kf { 0%, 45% { opacity: 1; filter: grayscale(0); } 55%, 100% { opacity: 0; filter: grayscale(1); } }
 
 /* ---------- 结果表格折叠 ---------- */
 .result-head {
