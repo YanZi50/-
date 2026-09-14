@@ -953,6 +953,7 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(config, str):
             self._send_json({"ok": False, "error": config})
             return
+        STATE.similar_pairs = []  # 新任务开始，清除上次任务的疑似重复提示
         register_allowed_dir(config.output_folder)
         self._run_task(config, "任务", "batch")
         self._send_json({"ok": True})

@@ -304,7 +304,7 @@ input[type="range"]::-webkit-slider-thumb {
   border: 3px solid var(--card);
   box-shadow: 0 1px 5px rgba(0,0,0,0.3);
 }
-.range-val { font-family: var(--font-mono); font-size: 13px; color: var(--accent); min-width: 42px; text-align: right; }
+.range-val { font-family: var(--font-mono); font-size: 13px; color: var(--accent); width: 58px; text-align: right; flex-shrink: 0; }
 
 /* ---------- 素材网格 ---------- */
 .material-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }

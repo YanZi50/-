@@ -778,9 +778,15 @@
               </div>
 
               <div v-if="similarPairs.length" class="msg warn" style="border:1px solid var(--warn-soft); margin-top:10px">
-                <div style="font-weight:700; margin-bottom:6px">⚠ 疑似重复输出（{{ similarPairs.length }} 对）</div>
+                <div style="font-weight:700; margin-bottom:6px">⚠ 疑似重复输出（{{ similarPairs.length }} 对）
+                  <span class="pager" style="display:inline-flex; margin-left:10px" v-if="simPageCount > 1">
+                    <button class="btn plain page-btn" @click="goSimPage(simPage - 1)" :disabled="simPage <= 1">‹</button>
+                    <span class="page-num">{{ simPage }} / {{ simPageCount }}</span>
+                    <button class="btn plain page-btn" @click="goSimPage(simPage + 1)" :disabled="simPage >= simPageCount">›</button>
+                  </span>
+                </div>
                 <div class="sim-list">
-                  <div v-for="pr in similarPairs" :key="pr.a + '|' + pr.b" class="sim-pair">
+                  <div v-for="pr in visibleSimilar" :key="pr.a + '|' + pr.b" class="sim-pair">
                     <span class="sim-files">
                       <span class="sim-file" :title="pr.a">{{ pr.a }}</span>
                       <span class="sim-sep">≈</span>

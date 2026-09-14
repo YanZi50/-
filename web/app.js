@@ -100,6 +100,7 @@ const state = reactive({
   healthChecking: false,
   previewTrans: 'fade',
   similarPairs: [],   // 本次任务输出疑似重复对（感知哈希查重）
+  simPage: 1,         // 疑似重复列表当前页（每页 5 条）
   queue: [],          // 待执行任务队列
   queueLabel: '',
   resultPage: 1,      // 生成结果当前页码（每页 5 条）
@@ -264,6 +265,17 @@ const resultPageCount = computed(() => Math.max(1, Math.ceil(resultRows.value.le
 function goResultPage(p) {
   const max = resultPageCount.value;
   state.resultPage = Math.max(1, Math.min(p, max));
+}
+const visibleSimilar = computed(() => {
+  const all = state.similarPairs;
+  const per = 5;
+  const page = Math.max(1, Math.min(state.simPage, Math.ceil(all.length / per) || 1));
+  return all.slice((page - 1) * per, page * per);
+});
+const simPageCount = computed(() => Math.max(1, Math.ceil(state.similarPairs.length / 5)));
+function goSimPage(p) {
+  const max = simPageCount.value;
+  state.simPage = Math.max(1, Math.min(p, max));
 }
 
 /* ---------- 转场预览 ---------- */
@@ -748,6 +760,8 @@ async function startJob() {
     return;
   }
   state.stepErrors[1] = false;
+  state.similarPairs = [];  // 新任务开始，清空上次任务的疑似重复提示
+  state.simPage = 1;
   // 开始前全局体检（每次实时检查，避免素材改动后状态过期）：有阻断问题则不启动
   await precheck();
   if (state.health && state.health.errors.length) {
@@ -871,6 +885,7 @@ async function poll() {
     if (!s.running && state.job.done === false && (s.success > 0 || s.failed > 0 || s.skipped > 0 || s.cancelled)) {
       state.job.done = true;
       state.resultPage = 1;
+      state.simPage = 1;
       if (s.success_items && s.success_items[0] && state.previewUrl === '' && state.job.total === 1) {
         const it = s.success_items[0];
         const m = String(it.output).match(/^(.+)[\\/]([^\\/]+)$/);
@@ -893,9 +908,7 @@ async function loadSimilar() {
     const s = await api('/api/similar');
     state.similarPairs = (s && s.pairs) || [];
   } catch (e) { /* 服务未就绪忽略 */ }
-}
-
-async function loadQueue() {
+}async function loadQueue() {
   try {
     const s = await api('/api/queue/list');
     state.queue = (s && s.queue) || [];
@@ -994,6 +1007,7 @@ createApp({
       downloadZip, Math,
       previewTransClass, previewTransName,
       visibleRows, resultPageCount, goResultPage,
+      visibleSimilar, simPageCount, goSimPage,
       deepDedupeOptions, deepStrengths,
       addToQueue, removeFromQueue, clearQueue, exportCsv,
     };
