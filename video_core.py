@@ -362,10 +362,19 @@ def render_output_name(
         "{时间}": time.strftime("%H%M%S"),
         "{随机4位}": f"{random.randint(0, 9999):04d}",
     }
-    result = template or "output_{序号}_{开头}_{结尾}"
+    raw = template or "output_{序号}_{开头}_{结尾}"
+    had_seq = "{序号}" in raw  # 替换前判断是否含序号
+    result = raw
     for key, value in values.items():
         result = result.replace(key, value)
-    if template and "{序号}" not in template:
+    if "{" in result or "}" in result:
+        # 模板含未识别变量（如被破坏的 {??} 或用户误写变量名）：回退默认模板，避免生成坏文件名
+        raw = "output_{序号}_{开头}_{结尾}"
+        had_seq = "{序号}" in raw
+        result = raw
+        for key, value in values.items():
+            result = result.replace(key, value)
+    if not had_seq:
         # 模板不含序号时自动追加序号（如 我的视频_001）：否则多条输出同名，
         # 会互相跳过只导出 1 条。追加后保证每条都导出且兼容断点续跑跳过逻辑。
         result = f"{result}_{index:03d}"

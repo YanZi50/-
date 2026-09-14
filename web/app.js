@@ -375,7 +375,9 @@ function applyConfig(cfg, restoreFixed = true, restorePaths = true) {
   p.encode_accel = cfg.encode_accel || 'auto';
   p.resolution = cfg.resolution || '1080x1920';
   p.duration_mode = cfg.duration_mode || '不限制';
-  p.output_name_template = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
+  // 模板恢复校验：含破坏标记（?，Windows 非法文件名字符，坏配置特征）时回退默认，避免生成 output_{__}_{__}_{__} 这类坏名
+  const tpl = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
+  p.output_name_template = tpl.includes('?') ? 'output_{序号}_{开头}_{结尾}' : tpl;
   p.dedupe_enabled = cfg.dedupe_enabled !== false;
   p.dedupe_level = cfg.dedupe_level || 'off';
   p.dedupe_options = Object.assign({ visual: true, segment: true, audio: true, speed: false, mirror: false, noise: false, pitch: false, deep_strength: 'medium' }, cfg.dedupe_options || {});
