@@ -1449,6 +1449,9 @@ def process_batch(
 
     if workers <= 1:
         for idx, (head, tail) in enumerate(combos, 1):
+            if cancel_event.is_set():
+                result.cancelled = True
+                break
             middle_items = pick_middle_sequence(middle_pools, idx, config.random_seed, exclude=[head, tail])
             first_middle = middle_items[0] if middle_items else None
             final_name = render_output_name(config.output_name_template, idx, head, tail, first_middle)
@@ -1499,7 +1502,8 @@ def process_batch(
                 on_done()
 
     if progress:
-        progress(len(combos), len(combos))
+        # 用实际完成数收尾：正常完成时=总数(100%)；取消/中断时停在已完成数，避免虚报 100%
+        progress(done_count, len(combos))
     logger(
         f"任务 {task_id} 结束：成功 {result.success}，跳过 {result.skipped}，失败 {result.failed}"
     )
@@ -1796,7 +1800,8 @@ def process_failed_items(
             logger(message)
 
     if progress:
-        progress(len(failed_items), len(failed_items))
+        # 收尾用实际处理到的位置：正常完成=总数；取消/中断停在已处理数
+        progress(pos, len(failed_items))
     return result
 
 def _frame_dhash(gray9x8: np.ndarray) -> np.ndarray:
