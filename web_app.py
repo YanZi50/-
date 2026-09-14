@@ -237,6 +237,7 @@ class AppState:
                 "success": self.result.success if self.result else 0,
                 "skipped": self.result.skipped if self.result else 0,
                 "failed": self.result.failed if self.result else 0,
+                "unfinished": max(0, self.total - (self.result.success + self.result.skipped + self.result.failed)) if self.result else 0,
                 "cancelled": self.result.cancelled if self.result else False,
                 "failed_items": self.result.failed_items if self.result else [],
                 "success_items": self.result.success_items if self.result else [],

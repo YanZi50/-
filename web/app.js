@@ -152,7 +152,7 @@ const state = reactive({
   precheckBad: [],
   job: {
     running: false, paused: false, done: false,
-    current: 0, total: 0, success: 0, failed: 0, skipped: 0, cancelled: false,
+    current: 0, total: 0, success: 0, failed: 0, skipped: 0, cancelled: false, unfinished: 0,
     eta: null, speed: null, error: null, logs: [],
     success_items: [], failed_items: [],
   },
@@ -878,6 +878,7 @@ async function poll() {
     state.job.success = s.success;
     state.job.skipped = s.skipped;
     state.job.failed = s.failed;
+    state.job.unfinished = s.unfinished || 0;
     state.job.cancelled = s.cancelled;
     state.job.error = s.error;
     state.job.eta = s.eta_seconds;

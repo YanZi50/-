@@ -739,6 +739,7 @@
                 <span v-if="job.eta!=null">预计剩余 <b>{{ fmtEta(job.eta) }}</b></span>
                 <template v-if="job.done">
                   <span>成功 <b style="color:var(--success)">{{ job.success }}</b></span>
+                  <span v-if="job.cancelled && job.unfinished > 0">未完成 <b style="color:var(--danger)">{{ job.unfinished }}</b></span>
                   <span>跳过 <b>{{ job.skipped }}</b></span>
                   <span>失败 <b style="color:var(--danger)">{{ job.failed }}</b></span>
                 </template>
