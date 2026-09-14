@@ -1060,6 +1060,33 @@ class Handler(BaseHTTPRequestHandler):
         else:
             add("ok", "引擎", "FFmpeg 可用")
 
+        # 5.5 固定素材提示：各库当前是固定还是随机
+        try:
+            fixed_msgs: list[str] = []
+            fixed_msgs.append(f"开头：{'已固定 ' + Path(config.fixed_head).name if config.fixed_head else '未固定（随机抽取）'}")
+            fixed_msgs.append(f"结尾：{'已固定 ' + Path(config.fixed_tail).name if config.fixed_tail else '未固定（随机抽取）'}")
+            pools = getattr(config, "middle_pools", None) or []
+            if pools:
+                for pi, p in enumerate(pools[:5], start=1):
+                    its = p.get("items") or []
+                    if its:
+                        names = "、".join(Path(x).name for x in its[:3])
+                        fixed_msgs.append(f"池{pi}：已固定 {names}{'…' if len(its) > 3 else ''}")
+                    else:
+                        fixed_msgs.append(f"池{pi}：未勾选（随机 {int(p.get('count', 1) or 1)} 条）")
+            else:
+                fixed_msgs.append("中间：未选择素材池")
+            bgm_mode = getattr(config, "bgm_mode", "") or ""
+            if bgm_mode in ("", "不使用"):
+                fixed_msgs.append("背景音乐：未使用")
+            elif bgm_mode == "音乐文件夹固定" and getattr(config, "fixed_bgm", ""):
+                fixed_msgs.append(f"背景音乐：已固定 {Path(config.fixed_bgm).name}")
+            else:
+                fixed_msgs.append(f"背景音乐：{bgm_mode}")
+            add("ok", "固定素材", "；".join(fixed_msgs))
+        except Exception as exc:
+            STATE.add_log(f"固定素材提示失败：{exc}")
+
         # 6 预计生成时间：优先用最近任务实测速度（条/秒含并发），无历史时按编码方式保守估算
         eta_seconds: int = 0
         try:

@@ -1,7 +1,7 @@
 /* ============================================================
    信息流素材一键拼接 · 应用逻辑（Vue3 本地构建，无外部依赖）
    ============================================================ */
-const { createApp, reactive, ref, computed, onMounted } = Vue;
+const { createApp, reactive, ref, computed, onMounted, watch } = Vue;
 
 /* ---------- API ---------- */
 async function api(path, options = {}) {
@@ -242,6 +242,7 @@ const progressPct = computed(() => {
   return Math.min(100, Math.round((state.job.current / state.job.total) * 100));
 });
 const logHtml = computed(() => escapeHtml(state.job.logs.join('\n')));
+const warnsText = computed(() => (state.health && state.health.warns || []).map((w) => w.scope + '：' + w.msg).join('\n'));
 const poolPickedCount = computed(() => state.middlePools.reduce((s, p) => s + p.items.length, 0));
 const resultRows = computed(() => {
   const rows = [];
@@ -724,7 +725,7 @@ function loadFromHistory(h) {
 }
 
 /* ---------- 预检 ---------- */
-async function precheck() {
+async function precheck(silent = false) {
   if (state.healthChecking) return;
   state.healthChecking = true;
   try {
@@ -732,10 +733,11 @@ async function precheck() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(collectConfig()),
     });
-    if (!data.ok) { showMsg(data.error || '体检失败', 'error'); return; }
+    if (!data.ok) { if (!silent) showMsg(data.error || '体检失败', 'error'); return; }
     state.health = data;
     state.precheckBad = data.report ? Object.values(data.report).flat().filter((m) => !m.ok) : [];
     const total = data.report ? Object.values(data.report).reduce((n, arr) => n + arr.length, 0) : 0;
+    if (silent) return; // 自动预检静默，结果展示在面板
     if (data.errors.length) {
       showMsg(`体检未通过：${data.errors[0].msg}`, 'error');
     } else if (data.warns.length) {
@@ -744,7 +746,7 @@ async function precheck() {
       showMsg(`体检通过：${total} 个素材全部正常`, 'success');
     }
   } catch (e) {
-    showMsg('体检失败：' + e.message, 'error');
+    if (!silent) showMsg('体检失败：' + e.message, 'error');
   } finally {
     state.healthChecking = false;
   }
@@ -984,6 +986,10 @@ createApp({
       loadHistory();
       loadSimilar();
       loadQueue();
+      // 进入「生成与结果」页自动预检（有素材且非运行中时，静默执行）
+      watch(() => state.step, (v) => {
+        if (v === 4 && !state.job.running && (state.folders.head || state.folders.tail)) precheck(true);
+      });
       setInterval(poll, 1000);
       poll();
     });
@@ -993,7 +999,7 @@ createApp({
       state, pageTitle, pageDesc,
       transitionOptions, dedupeLevels, dedupeOptions, dedupeLevelHint, watermarkScalePct, watermarkOpacityPct,
       yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows,
-      progressPct, logHtml, poolPickedCount, resultRows,
+      progressPct, logHtml, poolPickedCount, resultRows, warnsText,
       toggleTheme, toggleChip, randomizeSeed,
       selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,

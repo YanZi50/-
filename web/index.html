@@ -645,7 +645,7 @@
                 <div class="health-title">
                   <span>开始前体检</span>
                   <span v-if="health.errors.length" class="health-badge bad">未通过 · {{ health.errors.length }} 项问题</span>
-                  <span v-else-if="health.warns.length" class="health-badge warn">通过 · {{ health.warns.length }} 项提醒</span>
+                  <span v-else-if="health.warns.length" class="health-badge warn" :data-tip="warnsText">通过 · {{ health.warns.length }} 项提醒</span>
                   <span v-else class="health-badge good">全部通过</span>
                   <span class="health-recheck" @click="precheck">重新体检</span>
                 </div>
