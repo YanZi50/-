@@ -1,31 +1,39 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
 
 set PY=C:\Users\admin\AppData\Local\Programs\Python\Python312\python.exe
 if not exist "%PY%" set PY=python
 
-echo [1/3] ç”¨ PyInstaller æ‰“åŒ…ï¼ˆonedir + æ— æ§åˆ¶å° + åº”ç”¨å›¾æ ‡ï¼‰...
+rem È¡µ±Ç° git ¶Ì¹şÏ£×÷Îª°æ±¾ºÅ£¨ÎŞ git Ê±ÓÃÈÕÆÚ£©
+set VER=dev
+for /f "delims=" %%i in ('git rev-parse --short HEAD 2^>nul') do set VER=%%i
+if "%VER%"=="dev" for /f "delims=" %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set VER=%%i
+set ZIPNAME=ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó-±ãĞ¯°æ-%VER%.zip
+
+echo [1/3] ÓÃ PyInstaller ´ò°ü£¨onedir + ÎŞ¿ØÖÆÌ¨ + Ó¦ÓÃÍ¼±ê£©...
 "%PY%" -m PyInstaller --noconfirm --clean --onedir --noconsole ^
-  --name "ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥" ^
+  --name "ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó" ^
   --add-data "web;web" ^
   --collect-submodules imageio_ffmpeg ^
   --exclude-module faster_whisper ^
   --icon app.ico ^
   web_app.py
-if errorlevel 1 ( echo æ‰“åŒ…å¤±è´¥ & pause & exit /b 1 )
+if errorlevel 1 ( echo ´ò°üÊ§°Ü & pause & exit /b 1 )
 
-echo [2/3] å¤åˆ¶ ffmpeg.exe åˆ° exe æ— bin ç›®å½•...
+echo [2/3] ¸´ÖÆ ffmpeg.exe µ½ exe ÅÔ bin Ä¿Â¼...
 for /f "delims=" %%i in ('"%PY%" -c "from imageio_ffmpeg import get_ffmpeg_exe; print(get_ffmpeg_exe())"') do set FFMPEG=%%i
-if not exist "dist\ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥\bin" mkdir "dist\ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥\bin"
-copy /y "%FFMPEG%" "dist\ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥\bin\ffmpeg.exe" >nul
-if errorlevel 1 ( echo å¤åˆ¶ ffmpeg å¤±è´¥ & pause & exit /b 1 )
+if not exist "dist\ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó\bin" mkdir "dist\ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó\bin"
+copy /y "%FFMPEG%" "dist\ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó\bin\ffmpeg.exe" >nul
+if errorlevel 1 ( echo ¸´ÖÆ ffmpeg Ê§°Ü & pause & exit /b 1 )
 
-echo [3/3] å‹ç¼©ä¾¿æºç‰ˆå¹¶è¾“å‡ºåˆ° D:\Myfolder\doubao\...
-powershell -NoProfile -Command "Compress-Archive -Path 'dist\ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥\*' -DestinationPath 'D:\Myfolder\doubao\ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥-ä¾¿æºç‰ˆ.zip' -Force"
-if errorlevel 1 ( echo å‹ç¼©å¤±è´¥ & pause & exit /b 1 )
+rem ¿½±´ README Ê¹ÓÃÎÄµµ½ø±ãĞ¯°æ
+if exist "README.md" copy /y "README.md" "dist\ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó\READMEÊ¹ÓÃÎÄµµ.md" >nul
 
-echo å®Œæˆï¼š
-echo   ä¾¿æºç‰ˆå‹ç¼©åŒ…ï¼šD:\Myfolder\doubao\ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥-ä¾¿æºç‰ˆ.zip
-echo   è§£å‹ååŒå‡» ä¿¡æ¯æµç´ æä¸€é”®æ‹¼æ¥.exe å³å¯ä½¿ç”¨ï¼ˆè‡ªåŠ¨æ‰“å¼€æµè§ˆå™¨ï¼‰ã€‚
+echo [3/3] Ñ¹Ëõ±ãĞ¯°æ²¢Êä³öµ½ D:\Myfolder\doubao\...
+powershell -NoProfile -Command "Compress-Archive -Path 'dist\ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó\*' -DestinationPath 'D:\Myfolder\doubao\%ZIPNAME%' -Force"
+if errorlevel 1 ( echo Ñ¹ËõÊ§°Ü & pause & exit /b 1 )
+
+echo Íê³É£º
+echo   ±ãĞ¯°æÑ¹Ëõ°ü£ºD:\Myfolder\doubao\%ZIPNAME%
+echo   ½âÑ¹ºóË«»÷ ĞÅÏ¢Á÷ËØ²ÄÒ»¼üÆ´½Ó.exe ¼´¿ÉÊ¹ÓÃ£¨×Ô¶¯´ò¿ªä¯ÀÀÆ÷£©¡£
 pause
