@@ -73,3 +73,6 @@ const transitionOptions = [
   { value: 'squeezeh', label: '水平挤压' },
   { value: 'squeezev', label: '垂直挤压' },
 ];
+
+/* 默认转场 keys 快照：用于判断用户是否改过转场池（后端动态表同步时保护用户选择） */
+const DEFAULT_TRANSITION_KEYS = transitionOptions.map((t) => t.value);

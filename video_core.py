@@ -156,19 +156,74 @@ def build_combinations(
     return batch[:count]
 
 
-DEFAULT_TRANSITIONS = [
-    "fade", "dissolve",
-    "slideleft", "slideright", "slideup", "slidedown",
-    "wipeleft", "wiperight", "wipeup", "wipedown",
-    "circleopen", "circleclose", "circlecrop",
-    "smoothleft", "smoothright", "smoothup", "smoothdown",
-    "diagtl", "diagtr", "diagbl", "diagbr",
-    "zoomin", "pixelize", "fadeblack", "fadewhite",
-    "coverleft", "coverright", "coverup", "coverdown",
-    "revealleft", "revealright", "revealup", "revealdown",
-    "vertopen", "vertclose", "horzopen", "horzclose",
-    "squeezeh", "squeezev",
+# ============================================================
+# 插件注册表（唯一权威来源）
+# 新增转场：TRANSITION_REGISTRY 加一行（value 必须是 ffmpeg xfade 支持的 transition 名）
+# 新增去重维度：DEDUPE_REGISTRY 加一行，并在 dedupe_delta 中实现对应分支
+# 前端通过 /api/options 动态获取本表，刷新即生效（无需改前端）
+# ============================================================
+TRANSITION_REGISTRY: dict[str, str] = {
+    "fade": "淡入淡出", "dissolve": "溶解",
+    "slideleft": "左滑", "slideright": "右滑", "slideup": "上滑", "slidedown": "下滑",
+    "wipeleft": "左擦除", "wiperight": "右擦除", "wipeup": "上擦除", "wipedown": "下擦除",
+    "circleopen": "圆形打开", "circleclose": "圆形关闭", "circlecrop": "圆形裁剪",
+    "smoothleft": "平滑左移", "smoothright": "平滑右移", "smoothup": "平滑上移", "smoothdown": "平滑下移",
+    "diagtl": "对角(左上)", "diagtr": "对角(右上)", "diagbl": "对角(左下)", "diagbr": "对角(右下)",
+    "zoomin": "放大进入", "pixelize": "像素化",
+    "fadeblack": "黑场淡变", "fadewhite": "白场淡变",
+    "coverleft": "左覆盖", "coverright": "右覆盖", "coverup": "上覆盖", "coverdown": "下覆盖",
+    "revealleft": "左揭示", "revealright": "右揭示", "revealup": "上揭示", "revealdown": "下揭示",
+    "vertopen": "垂直打开", "vertclose": "垂直关闭",
+    "horzopen": "水平打开", "horzclose": "水平关闭",
+    "squeezeh": "水平挤压", "squeezev": "垂直挤压",
+    "radial": "放射状",
+}
+
+DEDUPE_REGISTRY: dict[str, dict] = {
+    "visual": {"name": "画面微调", "desc": "亮度/对比度/饱和度 ±5-10%，随机裁切缩放", "deep": False},
+    "segment": {"name": "片段差异化", "desc": "随机入点偏移、素材顺序、插帧、随机转场", "deep": False},
+    "audio": {"name": "音频差异化", "desc": "BGM 随机起播位置、轻微变速", "deep": False},
+    "speed": {"name": "变速不变调", "desc": "整体速度 ±1-3%，画面与声音同步，观感几乎无感", "deep": True},
+    "mirror": {"name": "水平镜像", "desc": "画面左右翻转（非对称画面适用）", "deep": True},
+    "noise": {"name": "轻噪点", "desc": "叠加轻微胶片颗粒，打破画面指纹", "deep": True},
+    "pitch": {"name": "音调微移", "desc": "声音整体升/降调 ≤3%，听感几乎无差", "deep": True},
+}
+
+DEDUPE_LEVELS: list[dict] = [
+    {"value": "off", "label": "关闭"},
+    {"value": "light", "label": "轻度"},
+    {"value": "deep", "label": "深度"},
 ]
+
+DEDUPE_LEVEL_HINT: dict[str, str] = {
+    "off": "不做差异化，每条成片内容一致（适合单条投放）",
+    "light": "画面与音频轻微扰动，成片观感基本不变（适合少量版本）",
+    "deep": "片段级差异化（入点偏移/顺序/插帧/转场随机），每条结构不同（适合批量投放）",
+}
+
+DEEP_STRENGTHS: list[dict] = [
+    {"value": "low", "label": "低", "hint": "±1% 扰动，观感几乎不变"},
+    {"value": "medium", "label": "中", "hint": "±2% 扰动，推荐"},
+    {"value": "high", "label": "高", "hint": "±3% 扰动，观感可察觉"},
+]
+
+COUNT_STEPS: list[int] = [10, 20, 50, 100, 200]
+
+
+def options_payload() -> dict:
+    """供 /api/options 下发的完整配置表（前端动态同步的唯一真相源）。"""
+    return {
+        "transitions": [{"value": k, "label": v} for k, v in TRANSITION_REGISTRY.items()],
+        "dedupe_levels": DEDUPE_LEVELS,
+        "dedupe_level_hint": DEDUPE_LEVEL_HINT,
+        "dedupe_options": [{"key": k, "name": v["name"], "desc": v["desc"]} for k, v in DEDUPE_REGISTRY.items() if not v["deep"]],
+        "deep_dedupe_options": [{"key": k, "name": v["name"], "desc": v["desc"]} for k, v in DEDUPE_REGISTRY.items() if v["deep"]],
+        "deep_strengths": DEEP_STRENGTHS,
+        "count_steps": COUNT_STEPS,
+    }
+
+
+DEFAULT_TRANSITIONS: list[str] = list(TRANSITION_REGISTRY.keys())
 
 
 def pick_transition(config, index: int) -> Optional[str]:
@@ -176,6 +231,8 @@ def pick_transition(config, index: int) -> Optional[str]:
         return config.transition_type or "fade"
     if config.transition_mode == "随机":
         pool = config.transition_types or DEFAULT_TRANSITIONS
+        # 过滤注册表外的无效值（前端动态表与后端不一致时兜底）
+        pool = [t for t in pool if t in TRANSITION_REGISTRY]
         if not pool:
             return None
         rng = random.Random(config.random_seed + index)

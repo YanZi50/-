@@ -210,6 +210,30 @@ const previewTransName = computed(() => {
 });
 
 /* ---------- 主题 ---------- */
+/* 动态选项版本号：后端 /api/options 拉取后 +1，驱动模板中的选项表重渲染 */
+const optionsRev = ref(0);
+
+async function syncOptionsFromServer(preloaded) {
+  try {
+    const o = preloaded || await api('/api/options');
+    if (!o) return;
+    const setList = (target, items) => { if (Array.isArray(items)) target.splice(0, target.length, ...items); };
+    setList(transitionOptions, o.transitions);
+    setList(dedupeLevels, o.dedupe_levels);
+    setList(dedupeOptions, o.dedupe_options);
+    setList(deepDedupeOptions, o.deep_dedupe_options);
+    setList(deepStrengths, o.deep_strengths);
+    setList(countSteps, o.count_steps);
+    if (o.dedupe_level_hint) Object.assign(dedupeLevelHint, o.dedupe_level_hint);
+    // 转场池：仅当用户未自定义（仍为默认全选）时同步新增/移除项，保护用户选择
+    const serverKeys = (o.transitions || []).map((t) => t.value);
+    if (serverKeys.length && JSON.stringify(state.params.transition_types) === JSON.stringify(DEFAULT_TRANSITION_KEYS)) {
+      state.params.transition_types = serverKeys.slice();
+    }
+    optionsRev.value++;
+  } catch (e) { /* 服务未就绪：沿用本地静态表兜底 */ }
+}
+
 function setCount(v) {
   state.params.count = v;
   const mc = maxCombos.value;
@@ -858,10 +882,12 @@ createApp({
         api('/api/config/load'),
         api('/api/templates'),
         api('/api/platform_presets'),
-      ]).then(([cfg, tpls, presets]) => {
+        api('/api/options'),
+      ]).then(([cfg, tpls, presets, opts]) => {
         if (cfg && Object.keys(cfg).length) applyConfig(cfg, false); // 启动载入不恢复固定素材
         state.templates = tpls.templates || [];
         state.presets = presets.presets || {};
+        syncOptionsFromServer(opts); // 动态选项表（后端注册表覆盖本地兜底）
       }).catch(() => { /* 服务未就绪由轮询提示 */ });
       loadHistory();
       loadSimilar();
@@ -877,8 +903,16 @@ createApp({
     return {
       ...Vue.toRefs(state),
       state, pageTitle, pageDesc,
-      transitionOptions, dedupeLevels, dedupeOptions, dedupeLevelHint, watermarkScalePct, watermarkOpacityPct,
-      yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows, countSteps, maxCombos, setCount,
+      // 选项表：动态（后端 /api/options 拉取后原地更新 + optionsRev 驱动重渲染）
+      transitionOptions: computed(() => { optionsRev.value; return transitionOptions; }),
+      dedupeLevels: computed(() => { optionsRev.value; return dedupeLevels; }),
+      dedupeOptions: computed(() => { optionsRev.value; return dedupeOptions; }),
+      dedupeLevelHint: computed(() => { optionsRev.value; return dedupeLevelHint; }),
+      deepDedupeOptions: computed(() => { optionsRev.value; return deepDedupeOptions; }),
+      deepStrengths: computed(() => { optionsRev.value; return deepStrengths; }),
+      countSteps: computed(() => { optionsRev.value; return countSteps; }),
+      watermarkScalePct, watermarkOpacityPct,
+      yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows, maxCombos, setCount,
       progressPct, logHtml, poolPickedCount, resultRows, warnsText,
       toggleTheme, toggleChip, randomizeSeed, shutdownApp,
       selectFolder, pickWatermark,

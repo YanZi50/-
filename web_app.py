@@ -495,6 +495,10 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/platform_presets":
             self._send_json({"presets": get_presets()})
             return
+        if route == "/api/options":
+            from video_core import options_payload
+            self._send_json(options_payload())
+            return
         if route == "/api/platform_presets/apply":
             name = (query.get("name") or [""])[0]
             self._send_json(apply_preset(name))
