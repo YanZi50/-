@@ -724,7 +724,7 @@ async function loadConfig() {
 /* ---------- 历史 ---------- */
 async function loadHistory() {
   const data = await api('/api/history');
-  state.history = (data.history || []).slice(0, 20);
+  state.history = (data.history || []).slice(0, 5);
 }
 async function clearHistory() {
   if (!confirm('确定要清空所有任务历史记录吗？')) return;

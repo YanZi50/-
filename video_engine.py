@@ -1494,6 +1494,10 @@ def process_batch(
                 )
                 futures[fut] = idx
             for fut in as_completed(futures):
+                # 取消后不再收集/计数剩余已提交任务（避免空转把进度推满），线程池退出时自动等待其快速返回
+                if cancel_event.is_set():
+                    result.cancelled = True
+                    break
                 try:
                     item = fut.result()
                 except Exception as exc:
