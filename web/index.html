@@ -24,19 +24,19 @@
         </div>
 
         <nav class="steps">
-          <div class="step-item" :class="{active: step===1, error: stepErrors[1]}" @click="step=1" :title="stepErrors[1] ? '输出目录未选择，请补齐' : ''">
+          <div class="step-item" :class="{active: step===1, error: stepErrors[1]}" @click="goStep(1)" :title="stepErrors[1] ? '输出目录未选择，请补齐' : ''">
             <span class="step-num">1</span>
             <span>素材库</span>
           </div>
-          <div class="step-item" :class="{active: step===2}" @click="step=2">
+          <div class="step-item" :class="{active: step===2}" @click="goStep(2)">
             <span class="step-num">2</span>
             <span>参数配置</span>
           </div>
-          <div class="step-item" :class="{active: step===3}" @click="step=3">
+          <div class="step-item" :class="{active: step===3}" @click="goStep(3)">
             <span class="step-num">3</span>
             <span>去重</span>
           </div>
-          <div class="step-item" :class="{active: step===4}" @click="step=4">
+          <div class="step-item" :class="{active: step===4}" @click="goStep(4)">
             <span class="step-num">4</span>
             <span>生成与结果</span>
           </div>
@@ -64,8 +64,8 @@
               <div class="page-desc">{{ pageDesc }}</div>
             </div>
             <div class="btn-row">
-              <button v-if="step>1" class="btn plain" @click="step--">← 上一步</button>
-              <button v-if="step<4" class="btn" @click="step++">下一步 →</button>
+              <button v-if="step>1" class="btn plain" @click="goStep(step-1)">← 上一步</button>
+              <button v-if="step<4" class="btn" @click="goStep(step+1)">下一步 →</button>
             </div>
           </div>
 
@@ -651,7 +651,7 @@
                 </div>
                 <div class="yield-panel">
                   <div class="yield-cell">
-                    <span class="yield-label">基础出片</span>
+                    <span class="yield-label">基础成片</span>
                     <span class="yield-num">{{ params.count }} 条</span>
                   </div>
                   <div class="yield-cell">
@@ -662,9 +662,13 @@
                     <span class="yield-label">每条版本</span>
                     <span class="yield-num">{{ params.dedupe_versions }} 版</span>
                   </div>
+                  <div class="yield-cell">
+                    <span class="yield-label">预期生成</span>
+                    <span class="yield-num">{{ yieldTotal }} 条</span>
+                  </div>
                   <div class="yield-cell" :class="{strong: dedupeOn}">
                     <span class="yield-label">实际生成</span>
-                    <span class="yield-num total">{{ yieldTotal }} 条</span>
+                    <span class="yield-num total">{{ (health && health.actual_count) ? health.actual_count : yieldTotal }} 条</span>
                   </div>
                   <div class="yield-cell" v-if="health.eta_seconds">
                     <span class="yield-label">预计生成时间</span>

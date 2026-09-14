@@ -337,6 +337,8 @@ function collectConfig() {
     middle_count: activePools.length ? activePools[0].count : 0,
     middle_pools: activePools,
     ...state.params,
+    // 去重开关以后端判定为准：UI 状态由 dedupe_level 驱动，此处显式同步（避免默认 true 与 UI 不符）
+    dedupe_enabled: state.params.dedupe_level !== 'off',
     bgm_folder: state.folders.bgm.trim(),
   };
 }
@@ -755,6 +757,11 @@ async function precheck(silent = false) {
 }
 
 /* ---------- 任务控制 ---------- */
+function goStep(n) {
+  state.step = n;
+  if (n === 4 && !state.job.running && (state.folders.head || state.folders.tail)) precheck(true);
+}
+
 async function startJob() {
   const payload = collectConfig();
   if (!payload.head_folder || !payload.tail_folder) { showMsg('请先填写开头和结尾文件夹', 'error'); return; }
@@ -993,7 +1000,7 @@ createApp({
       loadHistory();
       loadSimilar();
       loadQueue();
-      // 进入「生成与结果」页自动预检（有素材且非运行中时，静默执行）
+      // 进入「生成与结果」页自动预检（有素材且非运行中时，静默执行）——由 goStep 显式触发，另保留 watch 兜底
       watch(() => state.step, (v) => {
         if (v === 4 && !state.job.running && (state.folders.head || state.folders.tail)) precheck(true);
       });
@@ -1015,6 +1022,7 @@ createApp({
       toggleExpand, expandAll, collapseAll,
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
       loadHistory, clearHistory, loadFromHistory,
+      goStep,
       precheck, startJob, previewJob, togglePause, cancelJob, retryFailed,
       resumeJob, discardInterrupted,
       downloadZip, Math,

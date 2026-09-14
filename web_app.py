@@ -403,10 +403,33 @@ class Handler(BaseHTTPRequestHandler):
         if not path.exists() or not path.is_file():
             self.send_error(404, "not found")
             return
-        data = path.read_bytes()
-        self.send_response(200)
+        size = path.stat().st_size
+        # 支持 Range 请求（视频/音频 seek、断点续传）：无 Range 时整体返回
+        start, end = 0, size - 1
+        status = 200
+        range_header = self.headers.get("Range", "")
+        if range_header.startswith("bytes="):
+            m = re.match(r"bytes=(\d*)-(\d*)", range_header)
+            if m:
+                s_raw, e_raw = m.group(1), m.group(2)
+                if s_raw:
+                    start = int(s_raw)
+                if e_raw:
+                    end = int(e_raw)
+                if start > end or start >= size:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.end_headers()
+                    return
+                status = 206
+        length = end - start + 1
+        self.send_response(status)
         self.send_header("Content-Type", mime)
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         if as_attachment:
             ascii_name = as_attachment.encode("ascii", "ignore").decode() or "download"
             self.send_header(
@@ -416,7 +439,15 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(data)
+        with open(path, "rb") as fh:
+            fh.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = fh.read(min(65536, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
