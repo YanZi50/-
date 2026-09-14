@@ -172,6 +172,7 @@ class AppState:
         self.last_speed: float | None = None  # 最近一次任务实测速度（条/秒，含并发）
         self.queue: list[dict] = []          # 待执行队列 [{id, label, payload}]
         self.queue_seq: int = 0
+        self.update_info: dict | None = None  # 版本更新检查结果（失败保持 None，静默）
 
     def add_log(self, message: str) -> None:
         with self.lock:
@@ -503,6 +504,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/status":
             self._send_json(STATE.status_dict())
+            return
+        if route == "/api/update":
+            self._send_json(STATE.update_info or {"has_update": False})
             return
         if route == "/api/similar":
             self._send_json({"ok": True, "pairs": STATE.similar_pairs})
@@ -1281,6 +1285,47 @@ def tempfile_dir() -> str:
     return _tf.gettempdir()
 
 
+def _read_local_version() -> str:
+    """读取本地版本号（version.txt）。便携版打包时随 --add-data 放入 _internal；开发版在仓库根。"""
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", "")
+    if meipass:
+        candidates.append(Path(meipass) / "version.txt")
+    candidates.append(_app_root() / "version.txt")
+    for p in candidates:
+        try:
+            if p.is_file():
+                return p.read_text(encoding="utf-8").strip()[:32] or "dev"
+        except Exception:
+            pass
+    return "dev"
+
+
+def _check_update_async() -> None:
+    """后台静默检查 GitHub 最新版本。任何失败都不打扰使用（离线/网络异常时保持 None）。"""
+
+    def run() -> None:
+        try:
+            import urllib.request
+
+            url = "https://raw.githubusercontent.com/YanZi50/-/master/version.txt"
+            req = urllib.request.Request(url, headers={"User-Agent": "sppj-update-check/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                remote = resp.read().decode("utf-8").strip()[:32]
+            local = _read_local_version()
+            has_update = bool(remote and local and remote != local)
+            STATE.update_info = {
+                "current": local,
+                "latest": remote,
+                "has_update": has_update,
+                "url": "https://github.com/YanZi50/-",
+            }
+        except Exception:
+            pass  # 静默失败：不影响任何现有功能
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def _pick_free_port(start: int = 8765, tries: int = 30) -> int:
     """8765 被占用（重复启动/残留进程）时自动找下一个空闲端口，避免启动即崩溃无提示。"""
     for p in range(start, start + tries):
@@ -1308,6 +1353,7 @@ def main() -> None:
     if getattr(sys, "frozen", False):
         # 便携版：启动后自动打开默认浏览器
         threading.Timer(1.0, lambda: __import__("webbrowser").open(url)).start()
+    _check_update_async()  # 版本更新静默检查（失败不影响使用）
     try:
         server.serve_forever()
     except KeyboardInterrupt:

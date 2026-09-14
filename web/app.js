@@ -108,6 +108,7 @@ const state = reactive({
   resultPage: 1,      // 生成结果当前页码（每页 5 条）
   taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
   snapOpen: false,
+  updateInfo: null,     // 版本更新检查结果（null=未查到，静默）
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
@@ -916,6 +917,14 @@ async function poll() {
     state.job.logs = s.logs || [];
     state.job.success_items = s.success_items || [];
     state.job.failed_items = s.failed_items || [];
+    // 版本更新检查（失败静默，不打扰）
+    if (!state.updateInfo) {
+      try {
+        const u = await api('/api/update');
+        if (u && u.has_update) state.updateInfo = u;
+        else state.updateInfo = { has_update: false };
+      } catch (e) { state.updateInfo = { has_update: false }; }
+    }
     // 断点续跑：检测到上次任务中断（服务重启后快照恢复）
     if (s.interrupted && s.interrupted.exists && !state.interrupted) {
       state.interrupted = true;

@@ -172,6 +172,12 @@ body::before {
 }
 .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
 .health-dot.off { background: var(--danger); }
+.update-hint {
+  display: inline-block; margin-top: 6px; padding: 2px 8px; font-size: 11px;
+  font-weight: 600; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border-radius: 999px; text-decoration: none; cursor: pointer;
+}
+.update-hint:hover { filter: brightness(1.15); }
 
 /* ---------- 顶部 ---------- */
 .topbar {

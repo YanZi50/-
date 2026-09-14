@@ -47,6 +47,10 @@
             <span class="health-dot" :class="{off: !serverOk}"></span>
             {{ serverOk ? '服务已连接' : '服务连接失败' }}
           </div>
+          <a v-if="updateInfo && updateInfo.has_update" class="update-hint"
+             :href="updateInfo.url" target="_blank" title="点击前往 GitHub 下载新版本">
+            发现新版本 {{ updateInfo.latest }}
+          </a>
           <button class="theme-toggle" @click="toggleTheme">
             <span>{{ theme === 'dark' ? '🌙' : '☀️' }}</span>
             <span>{{ theme === 'dark' ? '深色模式' : '浅色模式' }}</span>
