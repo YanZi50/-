@@ -651,6 +651,17 @@ class Handler(BaseHTTPRequestHandler):
             payload = self._read_json()
             config = self._make_config(payload)
             if isinstance(config, str):
+                # 未选择素材/输出路径：逐项列出错误（体检面板可见），而非整体 400
+                miss: list[dict] = []
+                if not str(payload.get("head_folder") or "").strip():
+                    miss.append({"level": "error", "scope": "素材", "msg": "未选择开头素材路径"})
+                if not str(payload.get("tail_folder") or "").strip():
+                    miss.append({"level": "error", "scope": "素材", "msg": "未选择结尾素材路径"})
+                if not str(payload.get("output_folder") or "").strip():
+                    miss.append({"level": "error", "scope": "输出目录", "msg": "未选择输出目录"})
+                if miss:
+                    self._send_json({"ok": False, "items": miss, "errors": miss, "warns": [], "report": {}, "eta_seconds": None, "actual_count": 0, "max_combos": 0})
+                    return
                 self._send_json({"ok": False, "error": config}, 400)
                 return
             result = self._health_check(config)
@@ -1050,13 +1061,16 @@ class Handler(BaseHTTPRequestHandler):
             add("ok", "素材", "全部素材可正常读取")
 
         # 2 输出目录
-        out = Path(config.output_folder)
-        if not out.exists():
-            add("warn", "输出目录", "输出目录不存在，生成时自动创建")
-        elif not os.access(out, os.W_OK):
-            add("error", "输出目录", "输出目录不可写，请更换位置")
+        if not (config.output_folder or "").strip():
+            add("error", "输出目录", "未选择输出目录")
         else:
-            add("ok", "输出目录", "输出目录可写")
+            out = Path(config.output_folder)
+            if not out.exists():
+                add("warn", "输出目录", "输出目录不存在，生成时自动创建")
+            elif not os.access(out, os.W_OK):
+                add("error", "输出目录", "输出目录不可写，请更换位置")
+            else:
+                add("ok", "输出目录", "输出目录可写")
 
         # 3 磁盘空间（粗估输出体积 vs 剩余空间）
         try:

@@ -220,10 +220,10 @@ const snapRows = computed(() => {
   rows.push({ label: '水印', value: s.use_watermark ? (s.watermark_mode || '') + (s.watermark_path ? ' · ' + String(s.watermark_path).split(/[\\/]/).pop() : '') : '关闭' });
   rows.push({ label: '去重', value: s.dedupe_level === 'off' ? '未开启' : ((dedupeLevels.find((l) => l.value === s.dedupe_level) || {}).label || s.dedupe_level) + ` · 版本×${s.dedupe_versions || 1}` + (s.dedupe_level !== 'off' && s.dedupe_options && (s.dedupe_options.speed || s.dedupe_options.mirror || s.dedupe_options.noise || s.dedupe_options.pitch) ? ' · 深度差异化' : '') });
   rows.push({ label: '命名模板', value: s.output_name_template || '-' });
-  rows.push({ label: '开头素材', value: s.head_folder || '-' });
-  rows.push({ label: '结尾素材', value: s.tail_folder || '-' });
-  rows.push({ label: '中间素材池', value: (s.middle_pools || []).length ? (s.middle_pools || []).length + ' 个池' : '无' });
-  rows.push({ label: '输出目录', value: s.output_folder || '-' });
+  rows.push({ label: '开头素材', value: s.head_folder || '未选择路径' });
+  rows.push({ label: '结尾素材', value: s.tail_folder || '未选择路径' });
+  rows.push({ label: '中间素材池', value: (s.middle_pools || []).length ? (s.middle_pools || []).length + ' 个池' : '未选择' });
+  rows.push({ label: '输出目录', value: s.output_folder || '未选择路径' });
   return rows;
 });
 
@@ -737,7 +737,16 @@ async function precheck(silent = false) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(collectConfig()),
     });
-    if (!data.ok) { if (!silent) showMsg(data.error || '体检失败', 'error'); return; }
+    if (!data.ok) {
+      // 未选择路径等：后端返回 items 错误项 → 面板可见
+      if (data.items && data.items.length) {
+        state.health = data;
+        state.precheckBad = [];
+        if (!silent) showMsg(data.errors && data.errors[0] ? `体检未通过：${data.errors[0].msg}` : '体检失败', 'error');
+        return;
+      }
+      if (!silent) showMsg(data.error || '体检失败', 'error'); return;
+    }
     state.health = data;
     state.precheckBad = data.report ? Object.values(data.report).flat().filter((m) => !m.ok) : [];
     const total = data.report ? Object.values(data.report).reduce((n, arr) => n + arr.length, 0) : 0;
@@ -759,7 +768,8 @@ async function precheck(silent = false) {
 /* ---------- 任务控制 ---------- */
 function goStep(n) {
   state.step = n;
-  if (n === 4 && !state.job.running && (state.folders.head || state.folders.tail)) precheck(true);
+  // 进入生成页即预检：未选路径时体检面板显示"未选择开头/结尾/输出"错误项
+  if (n === 4 && !state.job.running) precheck(true);
 }
 
 async function startJob() {
