@@ -21,9 +21,7 @@ echo [1/3] 用 PyInstaller 打包（onedir + 无控制台 + 应用图标）...
 if errorlevel 1 ( echo 打包失败 & pause & exit /b 1 )
 
 echo [2/3] 复制 ffmpeg.exe 到 exe 旁 bin 目录...
-for /f "delims=" %%i in ('"%PY%" -c "from imageio_ffmpeg import get_ffmpeg_exe; print(get_ffmpeg_exe())"') do set FFMPEG=%%i
-if not exist "dist\信息流素材一键拼接\bin" mkdir "dist\信息流素材一键拼接\bin"
-copy /y "%FFMPEG%" "dist\信息流素材一键拼接\bin\ffmpeg.exe" >nul
+"%PY%" -c "import shutil, os, imageio_ffmpeg; dist=os.path.join('dist', '信息流素材一键拼接'); os.makedirs(os.path.join(dist, 'bin'), exist_ok=True); shutil.copy(imageio_ffmpeg.get_ffmpeg_exe(), os.path.join(dist, 'bin', 'ffmpeg.exe'))"
 if errorlevel 1 ( echo 复制 ffmpeg 失败 & pause & exit /b 1 )
 
 rem 拷贝 README 使用文档进便携版
