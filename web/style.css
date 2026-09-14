@@ -685,6 +685,15 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 }
 .chip:hover { border-color: var(--line-strong); }
 .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.chip-sm { padding: 2px 10px; font-size: 11px; }
+.dur-steps { display: flex; gap: 6px; margin-top: 6px; }
+.pool-actions { margin-left: 10px; display: inline-flex; gap: 6px; vertical-align: middle; }
+.mini-btn {
+  border: 1px solid var(--line); background: var(--bg-soft); color: var(--text-2);
+  border-radius: 6px; padding: 2px 10px; font-size: 12px; cursor: pointer;
+  transition: all var(--speed);
+}
+.mini-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ---------- 模板条 ---------- */
 .template-bar { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }

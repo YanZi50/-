@@ -524,6 +524,17 @@ function toggleChip(value) {
     : [...pool, value];
   state.previewTrans = value; // 点击即预览该转场
 }
+function selectAllTransitions() {
+  state.params.transition_types = transitionOptions.map((t) => t.value);
+  showMsg(`已全选 ${transitionOptions.length} 种转场`, 'success');
+}
+function clearTransitions() {
+  state.params.transition_types = [];
+  showMsg('已清空转场池（未选择时随机使用全部转场）', 'info');
+}
+function setTransitionDuration(v) {
+  state.params.transition_duration = v;
+}
 
 /* ---------- 平台预设 ---------- */
 async function applyPreset() {
@@ -915,6 +926,7 @@ createApp({
       yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows, maxCombos, setCount,
       progressPct, logHtml, poolPickedCount, resultRows, warnsText,
       toggleTheme, toggleChip, randomizeSeed, shutdownApp,
+      selectAllTransitions, clearTransitions, setTransitionDuration,
       selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
       selectPoolFolder, addMiddlePool, removeMiddlePool, scanPool,

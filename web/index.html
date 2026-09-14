@@ -404,6 +404,10 @@
                 <div class="field">
                   <div class="field-label">转场时长（秒）</div>
                   <input class="input" type="number" min="0.1" max="2" step="0.1" v-model.number="params.transition_duration">
+                  <div class="dur-steps">
+                    <span class="chip chip-sm" v-for="d in [0.3, 0.5, 0.8, 1.0]" :key="d"
+                          :class="{on: params.transition_duration === d}" @click="setTransitionDuration(d)">{{ d }}</span>
+                  </div>
                 </div>
               </div>
               <div v-if="params.transition_mode==='随机'">
@@ -411,9 +415,19 @@
                   <div class="field">
                     <div class="field-label">转场时长（秒）</div>
                     <input class="input" type="number" min="0.1" max="2" step="0.1" v-model.number="params.transition_duration">
+                    <div class="dur-steps">
+                      <span class="chip chip-sm" v-for="d in [0.3, 0.5, 0.8, 1.0]" :key="d"
+                            :class="{on: params.transition_duration === d}" @click="setTransitionDuration(d)">{{ d }}</span>
+                    </div>
                   </div>
                 </div>
-                <div class="field-label" style="margin-bottom:8px">随机转场池（点击选择，共 {{ transitionOptions.length }} 种）</div>
+                <div class="field-label" style="margin-bottom:8px">
+                  随机转场池（点击选择，共 {{ transitionOptions.length }} 种）
+                  <span class="pool-actions">
+                    <button class="mini-btn" @click="selectAllTransitions">全选</button>
+                    <button class="mini-btn" @click="clearTransitions">清空</button>
+                  </span>
+                </div>
                 <div class="chips chips-scroll">
                   <span class="chip" v-for="t in transitionOptions" :key="t.value"
                         :class="{on: params.transition_types.includes(t.value)}"
