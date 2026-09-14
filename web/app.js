@@ -328,6 +328,17 @@ function toggleTheme() {
   localStorage.setItem('sppj_theme', state.theme);
   document.documentElement.dataset.theme = state.theme;
 }
+async function shutdownApp() {
+  if (!confirm('确定退出程序吗？\n\n关闭浏览器不会停止程序，点击「退出程序」将停止后台服务（任务会被中断）。')) return;
+  try {
+    const d = await api('/api/shutdown', { method: 'POST' });
+    showMsg(d.msg || '程序已退出，可关闭本页面', 'success');
+    state.serverOk = false;
+  } catch (e) {
+    showMsg('程序已退出，可关闭本页面', 'success');
+    state.serverOk = false;
+  }
+}
 
 /* ---------- 配置收集与回填 ---------- */
 function collectConfig() {
@@ -1034,7 +1045,7 @@ createApp({
       transitionOptions, dedupeLevels, dedupeOptions, dedupeLevelHint, watermarkScalePct, watermarkOpacityPct,
       yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows, countSteps, maxCombos, setCount,
       progressPct, logHtml, poolPickedCount, resultRows, warnsText,
-      toggleTheme, toggleChip, randomizeSeed,
+      toggleTheme, toggleChip, randomizeSeed, shutdownApp,
       selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
       selectPoolFolder, addMiddlePool, removeMiddlePool, scanPool,

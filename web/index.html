@@ -51,6 +51,8 @@
             <span>{{ theme === 'dark' ? '🌙' : '☀️' }}</span>
             <span>{{ theme === 'dark' ? '深色模式' : '浅色模式' }}</span>
           </button>
+          <button class="theme-toggle" style="margin-top:6px" title="关闭浏览器不会退出程序，点击此处停止后台服务"
+                  @click="shutdownApp">⏻ 退出程序</button>
         </div>
       </aside>
 

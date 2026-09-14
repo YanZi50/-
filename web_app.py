@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -693,6 +694,11 @@ class Handler(BaseHTTPRequestHandler):
             STATE.add_log("已请求取消")
             self._send_json({"ok": True})
             return
+        if route == "/api/shutdown":
+            # 便携版"退出程序"：先返回响应，再在独立线程中关闭服务（shutdown 需在 serve_forever 线程外调用）
+            self._send_json({"ok": True, "msg": "程序已退出，可关闭本页面"})
+            threading.Timer(0.8, self.server.shutdown).start()
+            return
         if route == "/api/queue/add":
             self._queue_add()
             return
@@ -1275,8 +1281,22 @@ def tempfile_dir() -> str:
     return _tf.gettempdir()
 
 
+def _pick_free_port(start: int = 8765, tries: int = 30) -> int:
+    """8765 被占用（重复启动/残留进程）时自动找下一个空闲端口，避免启动即崩溃无提示。"""
+    for p in range(start, start + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((HOST, p))
+                return p
+            except OSError:
+                continue
+    return start
+
+
 def main() -> None:
     register_standard_dirs()
+    global PORT
+    PORT = _pick_free_port(PORT)
     # 断点续跑：上次任务被强杀/重启时快照残留，恢复为"可继续"状态
     snap = _load_snapshot()
     if snap:
