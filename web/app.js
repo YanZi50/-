@@ -343,13 +343,13 @@ function collectConfig() {
   };
 }
 
-function applyConfig(cfg, restoreFixed = true) {
+function applyConfig(cfg, restoreFixed = true, restorePaths = true) {
   if (!cfg) return;
-  state.folders.head = cfg.head_folder || '';
-  state.folders.tail = cfg.tail_folder || '';
-  state.folders.middle = cfg.middle_folder || '';
-  state.folders.bgm = cfg.bgm_folder || '';
-  state.folders.output = cfg.output_folder || '';
+  state.folders.head = restorePaths ? (cfg.head_folder || '') : '';
+  state.folders.tail = restorePaths ? (cfg.tail_folder || '') : '';
+  state.folders.middle = restorePaths ? (cfg.middle_folder || '') : '';
+  state.folders.bgm = restorePaths ? (cfg.bgm_folder || '') : '';
+  state.folders.output = restorePaths ? (cfg.output_folder || '') : '';
   // 固定素材：默认不恢复（用户自行选择固定）；仅从历史任务/模板恢复时保留
   state.fixed.head = restoreFixed ? (cfg.fixed_head || '') : '';
   state.fixed.tail = restoreFixed ? (cfg.fixed_tail || '') : '';
@@ -358,7 +358,7 @@ function applyConfig(cfg, restoreFixed = true) {
   if (Array.isArray(cfg.middle_pools) && cfg.middle_pools.length) {
     state.middlePools = cfg.middle_pools.slice(0, 5).map((pool, i) => ({
       id: i + 1,
-      folder: pool.folder || '',
+      folder: restorePaths ? (pool.folder || '') : '',
       items: restoreFixed && Array.isArray(pool.items) ? pool.items.slice() : [],
       count: pool.count ?? 1,
       files: [], expanded: false, search: '',
@@ -367,7 +367,7 @@ function applyConfig(cfg, restoreFixed = true) {
     const legacyItems = restoreFixed && Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
     if (restoreFixed && !legacyItems.length && cfg.fixed_middle) legacyItems.push(cfg.fixed_middle);
     const legacyCount = cfg.middle_count ?? 1;
-    state.middlePools = [{ id: 1, folder: cfg.middle_folder || '', items: legacyItems, count: legacyCount, files: [], expanded: false, search: '', shown: 24 }];
+    state.middlePools = [{ id: 1, folder: restorePaths ? (cfg.middle_folder || '') : '', items: legacyItems, count: legacyCount, files: [], expanded: false, search: '', shown: 24 }];
   }
   const p = state.params;
   p.count = cfg.count ?? 10;
@@ -726,7 +726,16 @@ async function precheck(silent = false) {
         if (!silent) showMsg(data.errors && data.errors[0] ? `体检未通过：${data.errors[0].msg}` : '体检失败', 'error');
         return;
       }
-      if (!silent) showMsg(data.error || '体检失败', 'error'); return;
+      // 仅有整体 error（如素材文件夹不存在）：同样写入面板，避免 silent 模式下面板残留旧结果
+      state.health = {
+        ok: false,
+        items: [{ level: 'error', scope: '配置', msg: data.error || '体检失败' }],
+        errors: [{ level: 'error', scope: '配置', msg: data.error || '体检失败' }],
+        warns: [], report: {}, actual_count: 0, max_combos: 0,
+      };
+      state.precheckBad = [];
+      if (!silent) showMsg(data.error || '体检失败', 'error');
+      return;
     }
     state.health = data;
     state.precheckBad = data.report ? Object.values(data.report).flat().filter((m) => !m.ok) : [];
@@ -1016,7 +1025,7 @@ createApp({
         api('/api/platform_presets'),
         api('/api/options'),
       ]).then(([cfg, tpls, presets, opts]) => {
-        if (cfg && Object.keys(cfg).length) applyConfig(cfg, false); // 启动载入不恢复固定素材
+        if (cfg && Object.keys(cfg).length) applyConfig(cfg, false, false); // 启动载入：不恢复固定素材，也不恢复素材路径（让用户自己选择）
         state.templates = tpls.templates || [];
         state.presets = presets.presets || {};
         syncOptionsFromServer(opts); // 动态选项表（后端注册表覆盖本地兜底）
@@ -1024,10 +1033,25 @@ createApp({
       loadHistory();
       loadSimilar();
       loadQueue();
-      // 进入「生成与结果」页自动预检（有素材且非运行中时，静默执行）——由 goStep 显式触发，另保留 watch 兜底
+      // 进入「生成与结果」页自动预检（非运行中时静默执行）；goStep(4) 也有触发，此处兜底直接改 step 的场景
       watch(() => state.step, (v) => {
-        if (v === 4 && !state.job.running && (state.folders.head || state.folders.tail)) precheck(true);
+        if (v === 4 && !state.job.running) precheck(true);
       });
+      // 配置变化后自动刷新体检（防抖 800ms）：在生成页直接改路径/参数时结果实时跟随，
+      // 避免出现"已填输出目录仍提示未选择"的旧结果
+      let healthTimer = null;
+      watch(
+        () => [
+          state.folders.head, state.folders.tail, state.folders.output,
+          state.folders.middle, state.folders.bgm,
+          state.params.count, state.params.dedupe_level, state.params.transition_mode,
+        ],
+        () => {
+          if (state.step !== 4 || state.job.running) return;
+          clearTimeout(healthTimer);
+          healthTimer = setTimeout(() => precheck(true), 800);
+        }
+      );
       setInterval(poll, 1000);
       poll();
     });
