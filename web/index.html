@@ -652,7 +652,8 @@
                 <div class="yield-panel">
                   <div class="yield-cell">
                     <span class="yield-label">基础成片</span>
-                    <span class="yield-num">{{ params.count }} 条</span>
+                    <span class="yield-num">{{ (health && health.max_combos) ? health.max_combos : params.count }} 条</span>
+                    <span class="yield-sub" v-if="health && health.max_combos && health.max_combos !== params.count">素材上限 · 请求 {{ params.count }} 条</span>
                   </div>
                   <div class="yield-cell">
                     <span class="yield-label">差异化</span>
@@ -664,7 +665,7 @@
                   </div>
                   <div class="yield-cell">
                     <span class="yield-label">预期生成</span>
-                    <span class="yield-num">{{ yieldTotal }} 条</span>
+                    <span class="yield-num">{{ (health && health.max_combos) ? health.max_combos * params.dedupe_versions : yieldTotal }} 条</span>
                   </div>
                   <div class="yield-cell" :class="{strong: dedupeOn}">
                     <span class="yield-label">实际生成</span>

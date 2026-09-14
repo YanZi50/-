@@ -1140,7 +1140,11 @@ class Handler(BaseHTTPRequestHandler):
 
         errors = [i for i in items if i["level"] == "error"]
         warns = [i for i in items if i["level"] == "warn"]
-        return {"ok": not errors, "items": items, "errors": errors, "warns": warns, "report": report, "eta_seconds": eta_seconds, "actual_count": actual_total}
+        try:
+            max_combos = self._count_combos(config)
+        except Exception:
+            max_combos = int(config.count)
+        return {"ok": not errors, "items": items, "errors": errors, "warns": warns, "report": report, "eta_seconds": eta_seconds, "actual_count": actual_total, "max_combos": max_combos}
 
     def _ffmpeg_ok(self) -> bool:
         try:
