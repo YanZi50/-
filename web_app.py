@@ -480,6 +480,15 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/app.js":
             self._serve_file("app.js", "application/javascript; charset=utf-8")
             return
+        if route == "/options.js":
+            self._serve_file("options.js", "application/javascript; charset=utf-8")
+            return
+        if route == "/util.js":
+            self._serve_file("util.js", "application/javascript; charset=utf-8")
+            return
+        if route == "/api.js":
+            self._serve_file("api.js", "application/javascript; charset=utf-8")
+            return
         if route == "/vendor/vue.global.prod.js":
             self._serve_file("vendor/vue.global.prod.js", "application/javascript; charset=utf-8")
             return

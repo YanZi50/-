@@ -1,94 +1,8 @@
 /* ============================================================
    信息流素材一键拼接 · 应用逻辑（Vue3 本地构建，无外部依赖）
+   依赖：options.js（配置表）/ util.js（工具函数）/ api.js（网络层）
    ============================================================ */
 const { createApp, reactive, ref, computed, onMounted, watch } = Vue;
-
-/* ---------- API ---------- */
-async function api(path, options = {}) {
-  const resp = await fetch(path, options);
-  const ct = resp.headers.get('content-type') || '';
-  if (ct.includes('application/json')) return resp.json();
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  return resp;
-}
-
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, (ch) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[ch]));
-}
-
-const dedupeLevels = [
-  { value: 'off', label: '关闭' },
-  { value: 'light', label: '轻度' },
-  { value: 'deep', label: '深度' },
-];
-const countSteps = [10, 20, 50, 100, 200];
-const maxCombos = computed(() => (state.health && state.health.max_combos) || 0);
-const dedupeOptions = [
-  { key: 'visual', name: '画面微调', desc: '亮度/对比度/饱和度 ±5-10%，随机裁切缩放' },
-  { key: 'segment', name: '片段差异化', desc: '随机入点偏移、素材顺序、插帧、随机转场' },
-  { key: 'audio', name: '音频差异化', desc: 'BGM 随机起播位置、轻微变速' },
-];
-/* 深度差异化：对画面/声音的更强扰动（打破平台指纹更彻底，观感影响更明显） */
-const deepDedupeOptions = [
-  { key: 'speed', name: '变速不变调', desc: '整体速度 ±1-3%，画面与声音同步，观感几乎无感' },
-  { key: 'mirror', name: '水平镜像', desc: '画面左右翻转（非对称画面适用）' },
-  { key: 'noise', name: '轻噪点', desc: '叠加轻微胶片颗粒，打破画面指纹' },
-  { key: 'pitch', name: '音调微移', desc: '声音整体升/降调 ≤3%，听感几乎无差' },
-];
-const deepStrengths = [
-  { value: 'low', label: '低', hint: '±1% 扰动，观感几乎不变' },
-  { value: 'medium', label: '中', hint: '±2% 扰动，推荐' },
-  { value: 'high', label: '高', hint: '±3% 扰动，观感可察觉' },
-];
-const dedupeLevelHint = {
-  off: '不做差异化，每条成片内容一致（适合单条投放）',
-  light: '画面与音频轻微扰动，成片观感基本不变（适合少量版本）',
-  deep: '片段级差异化（入点偏移/顺序/插帧/转场随机），每条结构不同（适合批量投放）',
-};
-
-const transitionOptions = [
-  { value: 'fade', label: '淡入淡出' },
-  { value: 'dissolve', label: '溶解' },
-  { value: 'slideleft', label: '左滑' },
-  { value: 'slideright', label: '右滑' },
-  { value: 'slideup', label: '上滑' },
-  { value: 'slidedown', label: '下滑' },
-  { value: 'wipeleft', label: '左擦除' },
-  { value: 'wiperight', label: '右擦除' },
-  { value: 'wipeup', label: '上擦除' },
-  { value: 'wipedown', label: '下擦除' },
-  { value: 'circleopen', label: '圆形打开' },
-  { value: 'circleclose', label: '圆形关闭' },
-  { value: 'circlecrop', label: '圆形裁剪' },
-  { value: 'smoothleft', label: '平滑左移' },
-  { value: 'smoothright', label: '平滑右移' },
-  { value: 'smoothup', label: '平滑上移' },
-  { value: 'smoothdown', label: '平滑下移' },
-  { value: 'diagtl', label: '对角(左上)' },
-  { value: 'diagtr', label: '对角(右上)' },
-  { value: 'diagbl', label: '对角(左下)' },
-  { value: 'diagbr', label: '对角(右下)' },
-  { value: 'zoomin', label: '放大进入' },
-  { value: 'pixelize', label: '像素化' },
-  { value: 'fadeblack', label: '黑场淡变' },
-  { value: 'fadewhite', label: '白场淡变' },
-  { value: 'coverleft', label: '左覆盖' },
-  { value: 'coverright', label: '右覆盖' },
-  { value: 'coverup', label: '上覆盖' },
-  { value: 'coverdown', label: '下覆盖' },
-  { value: 'revealleft', label: '左揭示' },
-  { value: 'revealright', label: '右揭示' },
-  { value: 'revealup', label: '上揭示' },
-  { value: 'revealdown', label: '下揭示' },
-  { value: 'vertopen', label: '垂直打开' },
-  { value: 'vertclose', label: '垂直关闭' },
-  { value: 'horzopen', label: '水平打开' },
-  { value: 'horzclose', label: '水平关闭' },
-  { value: 'squeezeh', label: '水平挤压' },
-  { value: 'squeezev', label: '垂直挤压' },
-];
 
 /* ---------- 全局状态 ---------- */
 const state = reactive({
@@ -171,6 +85,8 @@ const state = reactive({
     { kind: 'bgm', title: '背景音乐', hint: '可选', placeholder: '可选：音乐文件夹', uploadable: false },
   ],
 });
+
+const maxCombos = computed(() => (state.health && state.health.max_combos) || 0);
 
 function showMsg(text, type = 'info') {
   state.msg = { text, type };
@@ -292,25 +208,6 @@ const previewTransName = computed(() => {
   const t = transitionOptions.find((x) => x.value === v);
   return t ? t.label : '';
 });
-
-function makeDownloadUrl(outputPath) {
-  const m = String(outputPath).match(/^(.+)[\\/]([^\\/]+)$/);
-  if (!m) return '#';
-  return '/api/download?folder=' + encodeURIComponent(m[1]) + '&name=' + encodeURIComponent(m[2]);
-}
-function fileName(path) {
-  return String(path || '').split(/[\\/]/).pop() || '—';
-}
-function shortError(err) {
-  const s = String(err || '');
-  return s.length > 36 ? s.slice(0, 36) + '…' : s;
-}
-function fmtEta(seconds) {
-  const s = Math.max(1, Math.round(seconds));
-  if (s < 60) return s + ' 秒';
-  if (s < 3600) return Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒';
-  return Math.floor(s / 3600) + ' 时 ' + Math.floor((s % 3600) / 60) + ' 分';
-}
 
 /* ---------- 主题 ---------- */
 function setCount(v) {
@@ -518,54 +415,7 @@ function fitGrids() {
   });
 }
 
-function thumbUrl(path) {
-  return '/api/thumb?path=' + encodeURIComponent(path);
-}
-
 async function enrichMaterials(files, kind = '', concurrency = 6) {
-  const out = new Array(files.length);
-  let next = 0;
-  // 按内容指纹标记重复素材（同指纹除首个外标 dup）
-  const seen = new Set();
-  for (const f of files) {
-    f._dup = f.fp ? seen.has(f.fp) : false;
-    if (f.fp) seen.add(f.fp);
-  }
-  async function worker() {
-    while (true) {
-      const i = next++;
-      if (i >= files.length) return;
-      const f = files[i];
-      try {
-        const d = await api('/api/material_detail?path=' + encodeURIComponent(f.path) + '&kind=' + encodeURIComponent(kind));
-        // BGM 为纯音频（无视频流），有音频流即正常；视频素材必须有视频流
-        const ok = kind === 'bgm' ? (d.ok && (d.has_video || d.has_audio)) : (d.ok && d.has_video);
-        out[i] = {
-          path: f.path, name: f.name, ok, dup: !!f._dup,
-          thumbUrl: thumbUrl(f.path),
-          duration: d.duration || 0,
-          width: d.width || 0, height: d.height || 0,
-          landscape: (d.width || 0) >= (d.height || 0),
-          durationText: fmtDuration(d.duration),
-          resText: d.width && d.height ? d.width + '×' + d.height : '',
-        };
-      } catch (e) {
-        out[i] = { path: f.path, name: f.name, ok: false, dup: !!f._dup, thumbUrl: thumbUrl(f.path), durationText: '未知', resText: '' };
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, worker));
-  return out.filter(Boolean);
-}
-
-function fmtDuration(sec) {
-  sec = Math.round(sec || 0);
-  if (sec < 60) return sec + 's';
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return m + 'm' + (s < 10 ? '0' : '') + s + 's';
-}
-
-function syncFixed(kind) {
   const paths = state.materials[kind].map((m) => m.path);
   if (state.fixed[kind] && !paths.includes(state.fixed[kind])) state.fixed[kind] = '';
 }
@@ -589,10 +439,6 @@ function expandAll() {
 function collapseAll() {
   ['head', 'tail', 'bgm'].forEach((k) => { state.zoneExpanded[k] = false; });
   state.middlePools.forEach((p) => { p.expanded = false; });
-}
-
-function materialsName(kind) {
-  return { head: '开头', tail: '结尾', middle: '中间素材' }[kind] || kind;
 }
 
 /* ---------- 文件夹选择 ---------- */
@@ -653,26 +499,6 @@ function toggleChip(value) {
     ? pool.filter((v) => v !== value)
     : [...pool, value];
   state.previewTrans = value; // 点击即预览该转场
-}
-
-/* ---------- 转场预览 ---------- */
-function transitionClass(value) {
-  const map = {
-    fade: 'tp-fade', dissolve: 'tp-fade',
-    slideleft: 'tp-slide-l', slideright: 'tp-slide-r', slideup: 'tp-slide-u', slidedown: 'tp-slide-d',
-    wipeleft: 'tp-wipe-l', wiperight: 'tp-wipe-r', wipeup: 'tp-wipe-u', wipedown: 'tp-wipe-d',
-    circleopen: 'tp-circle', circleclose: 'tp-circle', circlecrop: 'tp-circle',
-    smoothleft: 'tp-slide-l', smoothright: 'tp-slide-r', smoothup: 'tp-slide-u', smoothdown: 'tp-slide-d',
-    diagtl: 'tp-wipe-l', diagtr: 'tp-wipe-r', diagbl: 'tp-wipe-u', diagbr: 'tp-wipe-d',
-    zoomin: 'tp-zoom', pixelize: 'tp-pixel',
-    fadeblack: 'tp-fade', fadewhite: 'tp-fade',
-    coverleft: 'tp-slide-l', coverright: 'tp-slide-r', coverup: 'tp-slide-u', coverdown: 'tp-slide-d',
-    revealleft: 'tp-slide-l', revealright: 'tp-slide-r', revealup: 'tp-slide-u', revealdown: 'tp-slide-d',
-    vertopen: 'tp-vert', vertclose: 'tp-vert',
-    horzopen: 'tp-horz', horzclose: 'tp-horz',
-    squeezeh: 'tp-squeeze-h', squeezev: 'tp-squeeze-v',
-  };
-  return map[value] || 'tp-fade';
 }
 
 /* ---------- 平台预设 ---------- */
