@@ -268,7 +268,9 @@
                   </div>
                   <div class="step-chips">
                     <button v-for="s in countSteps" :key="s" class="chip"
-                            :class="{on: params.count === s}" @click="params.count = s">{{ s }}</button>
+                            :class="{on: params.count === s, low: maxCombos && s > maxCombos}"
+                            :title="maxCombos && s > maxCombos ? '素材最多可拼 ' + maxCombos + ' 条' : ''"
+                            @click="setCount(s)">{{ s }}</button>
                   </div>
                 </div>
                 <div class="field">

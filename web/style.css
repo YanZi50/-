@@ -315,6 +315,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .step-chips .chip:hover { border-color: var(--accent); color: var(--accent); }
 .step-chips .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.step-chips .chip.low { opacity: .45; border-style: dashed; color: var(--text-3); cursor: help; }
+.step-chips .chip.low:hover { opacity: .75; border-color: var(--text-3); color: var(--text-3); }
 
 /* ---------- 素材网格 ---------- */
 .material-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
