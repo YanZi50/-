@@ -665,7 +665,8 @@
                   </div>
                   <div class="yield-cell">
                     <span class="yield-label">预期生成</span>
-                    <span class="yield-num">{{ (health && health.max_combos) ? health.max_combos * params.dedupe_versions : yieldTotal }} 条</span>
+                    <span class="yield-num">{{ params.count }} 条</span>
+                    <span class="yield-sub" v-if="dedupeOn && params.dedupe_versions > 1">每条版本 {{ params.dedupe_versions }} 版 · 共请求 {{ params.count * params.dedupe_versions }} 条</span>
                   </div>
                   <div class="yield-cell" :class="{strong: dedupeOn}">
                     <span class="yield-label">实际生成</span>
