@@ -890,15 +890,11 @@ class Handler(BaseHTTPRequestHandler):
 
         def run_one_batch(cfg: JobConfig, lbl: str, m: str, f_items: list[dict]) -> bool:
             """执行一批任务，返回是否继续处理队列（False 表示被取消/异常终止）。"""
-            # 日志/进度总数与实际生成条数保持一致（去重开启时组合不足按组合数出片）
+            # 日志/进度总数与实际生成条数保持一致（与 build_combinations 输出一致）
             if m == "retry":
                 total = len(f_items or [])
-            elif cfg.fixed_head and cfg.fixed_tail:
-                total = 1
             else:
-                _combos = self._count_combos(cfg)
-                _req = int(cfg.count) * max(1, int(getattr(cfg, "dedupe_versions", 1) or 1))
-                total = min(_req, _combos) if getattr(cfg, "dedupe_enabled", True) else _req
+                total = self._actual_total(cfg)
             STATE.begin(total)
             STATE.add_log(f"{lbl}开始，共 {total} 条")
             if m == "batch":
@@ -1077,15 +1073,19 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
-        # 4 组合数提示（提示与实际生成条数完全一致）
+        # 4 组合数提示（提示与实际生成条数完全一致；固定头/尾时组合不足不看去重开关都会少出）
         try:
             combos = self._count_combos(config)
             versions = max(1, int(getattr(config, "dedupe_versions", 1) or 1))
             total = config.count * versions
             actual = self._actual_total(config)
             dedupe_on = bool(getattr(config, "dedupe_enabled", True))
-            if config.count > combos and dedupe_on:
-                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，实际将生成 {actual} 条（不重复出片，避免平台判重）；关闭去重可凑满 {total} 条（可能重复）")
+            fixed_one = bool(config.fixed_head or config.fixed_tail)
+            if config.count > combos and (dedupe_on or fixed_one):
+                if fixed_one:
+                    add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，固定素材后仅 {combos} 种不同组合，实际将生成 {actual} 条（不重复出片，避免平台判重）")
+                else:
+                    add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，实际将生成 {actual} 条（不重复出片，避免平台判重）；关闭去重可凑满 {total} 条（可能重复）")
             else:
                 add("ok", "生成数量", f"{config.count} 条 × {versions} 版 = 共 {total} 条，实际将生成 {actual} 条")
         except Exception:
@@ -1163,11 +1163,19 @@ class Handler(BaseHTTPRequestHandler):
         return head * tail
 
     def _actual_total(self, config: JobConfig) -> int:
-        """与生成端完全一致的最终出片数：固定头尾=1；去重开=min(请求,组合)；去重关=请求（可重复）。"""
+        """与生成端 build_combinations 完全一致的最终出片数：
+        固定头尾=1；固定头/固定尾=min(请求, 去重后另一端素材数)（引擎固定分支不看去重开关、不凑满）；
+        都未固定：去重开=min(请求,组合)；去重关=请求（可重复）。"""
         if config.fixed_head and config.fixed_tail:
             return 1
-        combos = self._count_combos(config)
         req = int(config.count) * max(1, int(getattr(config, "dedupe_versions", 1) or 1))
+        head_n = len(dedupe_by_fp(scan_videos(config.head_folder)))
+        tail_n = len(dedupe_by_fp(scan_videos(config.tail_folder)))
+        if config.fixed_head:
+            return min(req, tail_n)
+        if config.fixed_tail:
+            return min(req, head_n)
+        combos = head_n * tail_n
         if getattr(config, "dedupe_enabled", True):
             return min(req, combos)
         return req
