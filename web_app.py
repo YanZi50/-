@@ -1291,14 +1291,40 @@ def _read_local_version() -> str:
     meipass = getattr(sys, "_MEIPASS", "")
     if meipass:
         candidates.append(Path(meipass) / "version.txt")
-    candidates.append(_app_root() / "version.txt")
+    candidates.append(Path(__file__).resolve().parent / "version.txt")
     for p in candidates:
         try:
             if p.is_file():
-                return p.read_text(encoding="utf-8").strip()[:32] or "dev"
+                return p.read_text(encoding="utf-8-sig").strip()[:32] or "dev"
         except Exception:
             pass
     return "dev"
+
+
+def _fetch_remote_version() -> str | None:
+    """读取 GitHub 远端版本号。优先 contents API（无 CDN 延迟），失败回退 raw。"""
+    import base64
+    import json
+    import urllib.request
+
+    urls = [
+        "https://api.github.com/repos/YanZi50/-/contents/version.txt",
+        "https://raw.githubusercontent.com/YanZi50/-/master/version.txt",
+    ]
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "sppj-update-check/1.0"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = resp.read()
+            if url.startswith("https://api.github.com"):
+                obj = json.loads(data.decode("utf-8"))
+                raw = base64.b64decode(obj.get("content") or "").decode("utf-8-sig")
+            else:
+                raw = data.decode("utf-8-sig")
+            return raw.strip()[:32] or None
+        except Exception:
+            continue
+    return None
 
 
 def _check_update_async() -> None:
@@ -1306,17 +1332,12 @@ def _check_update_async() -> None:
 
     def run() -> None:
         try:
-            import urllib.request
-
-            url = "https://raw.githubusercontent.com/YanZi50/-/master/version.txt"
-            req = urllib.request.Request(url, headers={"User-Agent": "sppj-update-check/1.0"})
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                remote = resp.read().decode("utf-8").strip()[:32]
+            remote = _fetch_remote_version()
             local = _read_local_version()
             has_update = bool(remote and local and remote != local)
             STATE.update_info = {
                 "current": local,
-                "latest": remote,
+                "latest": remote or local,
                 "has_update": has_update,
                 "url": "https://github.com/YanZi50/-",
             }
