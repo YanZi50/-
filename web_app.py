@@ -298,6 +298,7 @@ def _run_ps_file(script_body: str, timeout: int = 300) -> str:
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         b64 = (proc.stdout or "").strip()
         if not b64:
