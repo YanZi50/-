@@ -23,6 +23,7 @@ const dedupeLevels = [
   { value: 'light', label: '轻度' },
   { value: 'deep', label: '深度' },
 ];
+const countSteps = [10, 20, 50, 100, 200];
 const dedupeOptions = [
   { key: 'visual', name: '画面微调', desc: '亮度/对比度/饱和度 ±5-10%，随机裁切缩放' },
   { key: 'segment', name: '片段差异化', desc: '随机入点偏移、素材顺序、插帧、随机转场' },
@@ -1023,7 +1024,7 @@ createApp({
       ...Vue.toRefs(state),
       state, pageTitle, pageDesc,
       transitionOptions, dedupeLevels, dedupeOptions, dedupeLevelHint, watermarkScalePct, watermarkOpacityPct,
-      yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows,
+      yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows, countSteps,
       progressPct, logHtml, poolPickedCount, resultRows, warnsText,
       toggleTheme, toggleChip, randomizeSeed,
       selectFolder, pickWatermark,

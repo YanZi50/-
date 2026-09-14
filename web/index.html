@@ -266,6 +266,10 @@
                     <input type="range" min="1" max="200" v-model.number="params.count">
                     <span class="range-val">{{ params.count }} 条</span>
                   </div>
+                  <div class="step-chips">
+                    <button v-for="s in countSteps" :key="s" class="chip"
+                            :class="{on: params.count === s}" @click="params.count = s">{{ s }}</button>
+                  </div>
                 </div>
                 <div class="field">
                   <div class="field-label">并发任务数</div>

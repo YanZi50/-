@@ -306,6 +306,16 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .range-val { font-family: var(--font-mono); font-size: 13px; color: var(--accent); width: 58px; text-align: right; flex-shrink: 0; }
 
+/* 出片数量快捷档位 */
+.step-chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.step-chips .chip {
+  font-size: 11.5px; line-height: 1; padding: 5px 10px; border-radius: 999px;
+  background: var(--card); border: 1px solid var(--border); color: var(--text-2);
+  cursor: pointer; transition: all .15s; font-family: var(--font-mono);
+}
+.step-chips .chip:hover { border-color: var(--accent); color: var(--accent); }
+.step-chips .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+
 /* ---------- 素材网格 ---------- */
 .material-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: var(--space-3); margin-top: var(--space-3); }
 /* 素材两排显示，超出滚动查看（max-height 由 JS 按实时卡片高度精确设置，此处为兜底） */
