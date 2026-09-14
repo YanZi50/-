@@ -26,7 +26,9 @@ const state = reactive({
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
-  middlePools: [{ id: 1, folder: '', items: [], count: 1, files: [], expanded: false }],
+  materialSearch: { head: '', tail: '', bgm: '' },   // 素材库关键字搜索
+  soundOn: localStorage.getItem('sppj_sound') !== 'off',  // 任务完成提示音
+  middlePools: [{ id: 1, folder: '', items: [], count: 1, files: [], expanded: false, search: '' }],
   zoneExpanded: { head: false, tail: false, middle: false, bgm: false },
   params: {
     count: 10,
@@ -209,6 +211,53 @@ const previewTransName = computed(() => {
   return t ? t.label : '';
 });
 
+/* ---------- 素材搜索 ---------- */
+function filteredMats(kind) {
+  const kw = (state.materialSearch[kind] || '').trim().toLowerCase();
+  const list = state.materials[kind] || [];
+  if (!kw) return list;
+  return list.filter((m) => String(m.name || '').toLowerCase().includes(kw));
+}
+function filteredPoolFiles(pool) {
+  const kw = (pool.search || '').trim().toLowerCase();
+  const list = pool.files || [];
+  if (!kw) return list;
+  return list.filter((m) => String(m.name || '').toLowerCase().includes(kw));
+}
+
+/* ---------- 任务完成提示音（Web Audio 合成，无外部文件） ---------- */
+function toggleSound() {
+  state.soundOn = !state.soundOn;
+  localStorage.setItem('sppj_sound', state.soundOn ? 'on' : 'off');
+  showMsg(state.soundOn ? '提示音已开启' : '提示音已关闭', 'info');
+}
+function playDoneSound(kind) {
+  if (!state.soundOn) return;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const notes = kind === 'success' ? [523.25, 659.25, 783.99]
+      : kind === 'error' ? [220, 174.61]
+      : [392, 392]; // cancel：中音短音
+    notes.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const t = ctx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.18, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(t);
+      o.stop(t + 0.45);
+    });
+  } catch (e) { /* 静默：无音频环境不影响功能 */ }
+}
+
 /* ---------- 主题 ---------- */
 /* 动态选项版本号：后端 /api/options 拉取后 +1，驱动模板中的选项表重渲染 */
 const optionsRev = ref(0);
@@ -303,13 +352,13 @@ function applyConfig(cfg, restoreFixed = true) {
       folder: pool.folder || '',
       items: restoreFixed && Array.isArray(pool.items) ? pool.items.slice() : [],
       count: pool.count ?? 1,
-      files: [], expanded: false,
+      files: [], expanded: false, search: '',
     }));
   } else {
     const legacyItems = restoreFixed && Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
     if (restoreFixed && !legacyItems.length && cfg.fixed_middle) legacyItems.push(cfg.fixed_middle);
     const legacyCount = cfg.middle_count ?? 1;
-    state.middlePools = [{ id: 1, folder: cfg.middle_folder || '', items: legacyItems, count: legacyCount, files: [], expanded: false, shown: 24 }];
+    state.middlePools = [{ id: 1, folder: cfg.middle_folder || '', items: legacyItems, count: legacyCount, files: [], expanded: false, search: '', shown: 24 }];
   }
   const p = state.params;
   p.count = cfg.count ?? 10;
@@ -396,7 +445,7 @@ async function scanPool(pool) {
 function addMiddlePool() {
   if (state.middlePools.length >= 5) { showMsg('最多添加 5 个中间素材池', 'error'); return; }
   const nextId = state.middlePools.reduce((m, p) => Math.max(m, p.id), 0) + 1;
-  state.middlePools.push({ id: nextId, folder: '', items: [], count: 1, files: [], expanded: false, shown: 24 });
+  state.middlePools.push({ id: nextId, folder: '', items: [], count: 1, files: [], expanded: false, search: '', shown: 24 });
   showMsg(`已添加中间素材池 ${nextId} 号`);
 }
 
@@ -440,6 +489,42 @@ function fitGrids() {
 }
 
 async function enrichMaterials(files, kind = '', concurrency = 6) {
+  const out = new Array(files.length);
+  let next = 0;
+  // 按内容指纹标记重复素材（同指纹除首个外标 dup）
+  const seen = new Set();
+  for (const f of files) {
+    f._dup = f.fp ? seen.has(f.fp) : false;
+    if (f.fp) seen.add(f.fp);
+  }
+  async function worker() {
+    while (true) {
+      const i = next++;
+      if (i >= files.length) return;
+      const f = files[i];
+      try {
+        const d = await api('/api/material_detail?path=' + encodeURIComponent(f.path) + '&kind=' + encodeURIComponent(kind));
+        // BGM 为纯音频（无视频流），有音频流即正常；视频素材必须有视频流
+        const ok = kind === 'bgm' ? (d.ok && (d.has_video || d.has_audio)) : (d.ok && d.has_video);
+        out[i] = {
+          path: f.path, name: f.name, ok, dup: !!f._dup,
+          thumbUrl: thumbUrl(f.path),
+          duration: d.duration || 0,
+          width: d.width || 0, height: d.height || 0,
+          landscape: (d.width || 0) >= (d.height || 0),
+          durationText: fmtDuration(d.duration),
+          resText: d.width && d.height ? d.width + '×' + d.height : '',
+        };
+      } catch (e) {
+        out[i] = { path: f.path, name: f.name, ok: false, dup: !!f._dup, thumbUrl: thumbUrl(f.path), durationText: '未知', resText: '' };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, files.length) }, worker));
+  return out.filter(Boolean);
+}
+
+function syncFixed(kind) {
   const paths = state.materials[kind].map((m) => m.path);
   if (state.fixed[kind] && !paths.includes(state.fixed[kind])) state.fixed[kind] = '';
 }
@@ -811,9 +896,12 @@ async function poll() {
       refreshOutputFiles();
       loadHistory();
       loadSimilar();
-      if (s.cancelled) showMsg('任务已取消', 'info');
-      else if (s.error) showMsg('任务出错：' + s.error, 'error');
-      else showMsg(`任务完成：成功 ${s.success}，失败 ${s.failed}，跳过 ${s.skipped}`, s.failed ? 'error' : 'success');
+      if (s.cancelled) { showMsg('任务已取消', 'info'); playDoneSound('cancel'); }
+      else if (s.error) { showMsg('任务出错：' + s.error, 'error'); playDoneSound('error'); }
+      else {
+        showMsg(`任务完成：成功 ${s.success}，失败 ${s.failed}，跳过 ${s.skipped}`, s.failed ? 'error' : 'success');
+        playDoneSound(s.failed ? 'error' : 'success');
+      }
     }
   } catch (e) {
     state.serverOk = false;
@@ -932,6 +1020,7 @@ createApp({
       selectPoolFolder, addMiddlePool, removeMiddlePool, scanPool,
       togglePoolItem, poolOrder, togglePoolExpand,
       toggleExpand, expandAll, collapseAll,
+      filteredMats, filteredPoolFiles, toggleSound,
       applyPreset, saveTemplate, loadTemplateByName, deleteTemplate, saveConfig, loadConfig,
       loadHistory, clearHistory, loadFromHistory,
       goStep,

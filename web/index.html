@@ -107,9 +107,11 @@
               </div>
 
               <div v-if="materials[zone.kind].length && zoneExpanded[zone.kind]">
+                <input class="input search-input" :placeholder="'搜索' + (zone.kind==='bgm' ? '音乐' : '素材') + '文件名…'"
+                       v-model="materialSearch[zone.kind]" style="margin-bottom:8px">
                 <div class="material-grid material-grid-scroll">
                   <div class="material-card"
-                       v-for="m in materials[zone.kind]" :key="m.path"
+                       v-for="m in filteredMats(zone.kind)" :key="m.path"
                        :class="{ picked: fixed[zone.kind]===m.path, broken: !m.ok }"
                        @click="toggleFixed(zone.kind, m.path)">
                     <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
@@ -168,9 +170,10 @@
                   勾选该池素材（最多 10 条，按勾选顺序插入）；未勾选时从该池随机抽取 {{ pool.count }} 条
                 </div>
                 <div v-if="pool.files.length && pool.expanded" style="margin-top:10px">
+                  <input class="input search-input" placeholder="搜索素材文件名…" v-model="pool.search" style="margin-bottom:8px">
                   <div class="material-grid material-grid-scroll">
                     <div class="material-card"
-                         v-for="m in pool.files" :key="m.path"
+                         v-for="m in filteredPoolFiles(pool)" :key="m.path"
                          :class="{ picked: pool.items.includes(m.path), broken: !m.ok }"
                          @click="togglePoolItem(pool, m.path)">
                       <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
@@ -732,6 +735,9 @@
                 <button class="btn plain" @click="togglePause" :disabled="!job.running">{{ job.paused ? '继续' : '暂停' }}</button>
                 <button class="btn danger" @click="cancelJob" :disabled="!job.running">取消</button>
                 <button class="btn plain" @click="retryFailed" :disabled="job.running || !job.failed">重试失败项 ({{ job.failed }})</button>
+                <button class="btn plain" style="margin-left:auto" @click="toggleSound" :title="'任务完成/出错时提示音'">
+                  {{ soundOn ? '🔔 提示音开' : '🔕 提示音关' }}
+                </button>
               </div>
 
               <div class="card queue-card" style="margin-top:14px; padding:12px 14px">
