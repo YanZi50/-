@@ -170,7 +170,7 @@ const resultRows = computed(() => {
   const rows = [];
   (state.job.success_items || []).forEach((it) => rows.push({
     index: it.index, head: it.head, middle: it.middle, tail: it.tail,
-    ok: true, downloadUrl: makeDownloadUrl(it.output), error: '',
+    ok: true, size: it.size, downloadUrl: makeDownloadUrl(it.output), error: '',
   }));
   (state.job.failed_items || []).forEach((it) => rows.push({
     index: it.index, head: it.head, middle: it.middle, tail: it.tail,
@@ -843,6 +843,25 @@ async function downloadZip() {
   }
 }
 
+async function openOutputFolder() {
+  if (!state.outputFolder) return;
+  try {
+    const d = await api('/api/open_folder?folder=' + encodeURIComponent(state.outputFolder));
+    if (!d.ok) showMsg('打开失败：' + (d.error || ''), 'error');
+  } catch (e) {
+    showMsg('打开失败：' + e.message, 'error');
+  }
+}
+
+async function copyErrorText(err) {
+  try {
+    await navigator.clipboard.writeText(String(err || ''));
+    showMsg('失败原因已复制', 'success');
+  } catch (e) {
+    showMsg('复制失败（浏览器权限限制）', 'error');
+  }
+}
+
 /* ---------- 轮询 ---------- */
 async function poll() {
   try {
@@ -1026,7 +1045,7 @@ createApp({
       goStep,
       precheck, startJob, previewJob, togglePause, cancelJob, retryFailed,
       resumeJob, discardInterrupted,
-      downloadZip, Math,
+      downloadZip, Math, openOutputFolder, copyErrorText, fmtSize,
       previewTransClass, previewTransName,
       visibleRows, resultPageCount, goResultPage,
       visibleSimilar, simPageCount, goSimPage,

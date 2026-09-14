@@ -783,7 +783,9 @@
 
               <div class="table-wrap" v-if="resultRows.length">
                 <div class="result-head">
-                  <span>生成结果（{{ resultRows.length }} 条）</span>
+                  <span>生成结果（{{ resultRows.length }} 条）
+                    <button v-if="outputFolder" class="btn plain" style="margin-left:8px;padding:2px 10px" @click="openOutputFolder" title="在资源管理器中打开输出目录">📂 打开文件夹</button>
+                  </span>
                   <span class="pager" v-if="resultPageCount > 1">
                     <button class="btn plain page-btn" @click="goResultPage(resultPage - 1)" :disabled="resultPage <= 1">‹ 上一页</button>
                     <span class="page-num">{{ resultPage }} / {{ resultPageCount }}</span>
@@ -792,7 +794,7 @@
                 </div>
                 <table class="tbl">
                   <thead>
-                    <tr><th>#</th><th>开头</th><th>中间</th><th>结尾</th><th>状态</th><th>操作</th></tr>
+                    <tr><th>#</th><th>开头</th><th>中间</th><th>结尾</th><th>大小</th><th>状态</th><th>操作</th></tr>
                   </thead>
                   <tbody>
                     <tr v-for="row in visibleRows" :key="row.index">
@@ -800,10 +802,15 @@
                       <td class="name-cell" :title="row.head">{{ fileName(row.head) }}</td>
                       <td class="name-cell" :title="row.middle || ''" style="color:var(--text-3)">{{ row.middle ? fileName(row.middle) : '—' }}</td>
                       <td class="name-cell" :title="row.tail">{{ fileName(row.tail) }}</td>
+                      <td class="size-cell" v-if="row.ok">{{ fmtSize(row.size) }}</td>
+                      <td class="size-cell" v-else>—</td>
                       <td><span class="badge" :class="row.ok ? 'ok' : 'fail'">{{ row.ok ? '成功' : '失败' }}</span></td>
                       <td>
                         <a v-if="row.ok" class="btn soft" :href="row.downloadUrl" style="text-decoration:none">下载</a>
-                        <span v-else class="card-hint" :title="row.error">{{ shortError(row.error) }}</span>
+                        <span v-else style="display:inline-flex;align-items:center;gap:6px">
+                          <span class="card-hint" :title="row.error">{{ shortError(row.error) }}</span>
+                          <button class="btn plain" style="padding:1px 8px;font-size:12px" @click="copyErrorText(row.error)" title="复制完整失败原因">复制</button>
+                        </span>
                       </td>
                     </tr>
                   </tbody>

@@ -63,6 +63,44 @@ else:
 # 运行中任务快照：服务被强杀/重启后，据此恢复"上次任务中断"，支持断点续跑
 SNAPSHOT_FILE = STATE_DIR / "last_task.json"
 
+# 素材扫描缓存：folder -> (目录mtime, 文件列表)。目录变动才重扫，避免重复 listdir+指纹。
+_SCAN_CACHE: dict[str, tuple[float, list[str]]] = {}
+_SCAN_LOCK = threading.Lock()
+
+
+def _with_sizes(items: list) -> list:
+    """为成功产物补充文件大小（生成结果列表展示用）。"""
+    out = []
+    for it in items or []:
+        d = dict(it)
+        try:
+            p = d.get("output") or ""
+            if p and os.path.isfile(p):
+                d["size"] = os.path.getsize(p)
+        except OSError:
+            pass
+        out.append(d)
+    return out
+
+
+def _scan_cached(folder: str, kind: str) -> list[str]:
+    """带目录 mtime 缓存的扫描：目录未变动时直接返回缓存列表。"""
+    if not folder:
+        return []
+    try:
+        st = os.stat(folder)
+        mtime = st.st_mtime
+    except OSError:
+        return []
+    with _SCAN_LOCK:
+        hit = _SCAN_CACHE.get((folder, kind))
+        if hit and hit[0] == mtime:
+            return hit[1]
+    files = scan_videos(folder) if kind == "video" else scan_audio(folder)
+    with _SCAN_LOCK:
+        _SCAN_CACHE[(folder, kind)] = (mtime, files)
+    return files
+
 
 def _fmt_size(n: int) -> str:
     n = float(max(0, n))
@@ -242,7 +280,7 @@ class AppState:
                 "unfinished": max(0, self.total - (self.result.success + self.result.skipped + self.result.failed)) if self.result else 0,
                 "cancelled": self.result.cancelled if self.result else False,
                 "failed_items": self.result.failed_items if self.result else [],
-                "success_items": self.result.success_items if self.result else [],
+                "success_items": _with_sizes(self.result.success_items) if self.result else [],
                 "error": self.error,
                 "interrupted": self.interrupted,
                 "last_config": self._last_config_preview(),
@@ -545,10 +583,10 @@ class Handler(BaseHTTPRequestHandler):
             tail = (query.get("tail") or [""])[0]
             middle = (query.get("middle") or [""])[0]
             bgm = (query.get("bgm") or [""])[0]
-            head_files = scan_videos(head)
-            tail_files = scan_videos(tail)
-            middle_files = scan_videos(middle)
-            bgm_files = scan_audio(bgm)
+            head_files = _scan_cached(head, "video")
+            tail_files = _scan_cached(tail, "video")
+            middle_files = _scan_cached(middle, "video")
+            bgm_files = _scan_cached(bgm, "audio")
             self._send_json(
                 {
                     "head": [{"name": Path(p).name, "path": p, "fp": media_fingerprint(p)} for p in head_files],
@@ -611,6 +649,16 @@ class Handler(BaseHTTPRequestHandler):
             folder = (query.get("folder") or [""])[0]
             self._list_output(folder)
             return
+        if route == "/api/open_folder":
+            folder = (query.get("folder") or [""])[0]
+            if not folder or not os.path.isdir(folder):
+                self._send_json({"ok": False, "error": "输出目录不存在"}, 404)
+                return
+            try:
+                os.startfile(folder)  # 资源管理器中打开，不弹黑窗
+                self._send_json({"ok": True})
+            except Exception as e:  # noqa: BLE001
+                self._send_json({"ok": False, "error": str(e)})
         if route == "/api/download":
             folder = (query.get("folder") or [""])[0]
             name = (query.get("name") or [""])[0]

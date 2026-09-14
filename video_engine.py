@@ -101,8 +101,25 @@ def parse_duration(value: str) -> float:
     return int(h) * 3600 + int(m) * 60 + float(s)
 
 
+# 素材探测缓存：path -> (文件mtime, 探测时间戳, 结果)。文件变动或超时后自动失效。
+_probe_cache: dict[str, tuple[float, float, dict]] = {}
+_PROBE_TTL = 300.0  # 5 分钟内同路径不重复跑 ffmpeg 探测
+_probe_lock = threading.Lock()
+
+
 def probe_media(path: str, require_video: bool = True) -> dict:
-    """探测媒体信息。require_video=False 时纯音频文件（如 BGM）也算正常。"""
+    """探测媒体信息。require_video=False 时纯音频文件（如 BGM）也算正常。
+    带进程内缓存：同路径 5 分钟内且文件未变动时直接返回缓存，避免几百条素材重复探测。"""
+    try:
+        st = os.stat(path)
+        mtime = st.st_mtime
+        now = time.time()
+    except OSError:
+        return {"ok": False, "error": "文件不存在"}
+    with _probe_lock:
+        hit = _probe_cache.get(path)
+        if hit and hit[0] == mtime and now - hit[1] < _PROBE_TTL:
+            return hit[2]
     cmd = [
         _ffmpeg(),
         "-hide_banner",
@@ -136,7 +153,7 @@ def probe_media(path: str, require_video: bool = True) -> dict:
     if am:
         audio_start = float(am.group(1))
         audio_duration = float(am.group(2))
-    return {
+    result = {
         "duration": duration or 1.0,
         "has_audio": has_audio,
         "has_video": has_video,
@@ -146,6 +163,9 @@ def probe_media(path: str, require_video: bool = True) -> dict:
         "audio_duration": audio_duration,
         "ok": bool(duration > 0.05 and (has_video if require_video else (has_video or has_audio))),
     }
+    with _probe_lock:
+        _probe_cache[path] = (mtime, now, result)
+    return result
 
 
 def escape_filter_path(path: str) -> str:
