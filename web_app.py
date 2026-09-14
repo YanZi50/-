@@ -1042,13 +1042,14 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
-        # 4 组合数提示
+        # 4 组合数提示（去重开启时组合不足会少出片，去重关闭时可随机重复凑满）
         try:
             combos = self._count_combos(config)
             versions = max(1, int(getattr(config, "dedupe_versions", 1) or 1))
             total = config.count * versions
-            if config.count > combos:
-                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，超出部分按可用组合生成（不重复出片）")
+            dedupe_on = bool(getattr(config, "dedupe_enabled", True))
+            if config.count > combos and dedupe_on:
+                add("warn", "生成数量", f"请求 {config.count} 条 × {versions} 版 = 共 {total} 条，素材最多 {combos} 种不同组合，去重开启时只生成 {combos} 条不重复（不会重复出片）；关闭去重可凑满 {total} 条（可能重复）")
             else:
                 add("ok", "生成数量", f"{config.count} 条 × {versions} 版 = 共 {total} 条，素材可组合 {combos} 种")
         except Exception:

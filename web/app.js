@@ -340,28 +340,29 @@ function collectConfig() {
   };
 }
 
-function applyConfig(cfg) {
+function applyConfig(cfg, restoreFixed = true) {
   if (!cfg) return;
   state.folders.head = cfg.head_folder || '';
   state.folders.tail = cfg.tail_folder || '';
   state.folders.middle = cfg.middle_folder || '';
   state.folders.bgm = cfg.bgm_folder || '';
   state.folders.output = cfg.output_folder || '';
-  state.fixed.head = cfg.fixed_head || '';
-  state.fixed.tail = cfg.fixed_tail || '';
-  state.fixed.middle = cfg.fixed_middle || '';
+  // 固定素材：默认不恢复（用户自行选择固定）；仅从历史任务/模板恢复时保留
+  state.fixed.head = restoreFixed ? (cfg.fixed_head || '') : '';
+  state.fixed.tail = restoreFixed ? (cfg.fixed_tail || '') : '';
+  state.fixed.middle = restoreFixed ? (cfg.fixed_middle || '') : '';
   // 中间素材池：优先多池结构，否则回退旧单池字段
   if (Array.isArray(cfg.middle_pools) && cfg.middle_pools.length) {
     state.middlePools = cfg.middle_pools.slice(0, 5).map((pool, i) => ({
       id: i + 1,
       folder: pool.folder || '',
-      items: Array.isArray(pool.items) ? pool.items.slice() : [],
+      items: restoreFixed && Array.isArray(pool.items) ? pool.items.slice() : [],
       count: pool.count ?? 1,
       files: [], expanded: false,
     }));
   } else {
-    const legacyItems = Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
-    if (!legacyItems.length && cfg.fixed_middle) legacyItems.push(cfg.fixed_middle);
+    const legacyItems = restoreFixed && Array.isArray(cfg.middle_items) ? cfg.middle_items.slice() : [];
+    if (restoreFixed && !legacyItems.length && cfg.fixed_middle) legacyItems.push(cfg.fixed_middle);
     const legacyCount = cfg.middle_count ?? 1;
     state.middlePools = [{ id: 1, folder: cfg.middle_folder || '', items: legacyItems, count: legacyCount, files: [], expanded: false, shown: 24 }];
   }
@@ -704,7 +705,7 @@ async function saveConfig() {
 async function loadConfig() {
   const cfg = await api('/api/config/load');
   if (!cfg || !Object.keys(cfg).length) { showMsg('还没有保存过配置', 'info'); return; }
-  applyConfig(cfg);
+  applyConfig(cfg, false); // 启动载入不恢复固定素材，由用户自行选择固定
   showMsg('配置已载入', 'success');
 }
 
@@ -979,7 +980,7 @@ createApp({
         api('/api/templates'),
         api('/api/platform_presets'),
       ]).then(([cfg, tpls, presets]) => {
-        if (cfg && Object.keys(cfg).length) applyConfig(cfg);
+        if (cfg && Object.keys(cfg).length) applyConfig(cfg, false); // 启动载入不恢复固定素材
         state.templates = tpls.templates || [];
         state.presets = presets.presets || {};
       }).catch(() => { /* 服务未就绪由轮询提示 */ });
