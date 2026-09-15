@@ -842,7 +842,14 @@
 
               <div v-if="similarPairs.length || deduping" class="msg warn" style="border:1px solid var(--warn-soft); margin-top:10px">
                 <template v-if="deduping && !similarPairs.length">
-                  <div style="font-weight:700">🔍 正在查重产物相似度…（生成已完成，查重在后台进行，不影响使用）</div>
+                  <div style="font-weight:700">🔍 正在查重产物相似度…（生成已完成，查重在后台进行，不影响使用）
+                    <template v-if="dedupProgress && dedupProgress.stage === 'compare' && dedupProgress.total > 0">
+                      <span style="color:var(--text-dim)">已比对 {{ dedupProgress.done }} / {{ dedupProgress.total }} 对</span>
+                    </template>
+                    <template v-else-if="dedupProgress && dedupProgress.stage === 'fingerprint'">
+                      <span style="color:var(--text-dim)">抽帧中 {{ dedupProgress.done }} / {{ dedupProgress.total }}</span>
+                    </template>
+                  </div>
                 </template>
                 <template v-else>
                 <div style="font-weight:700; margin-bottom:6px">⚠ 疑似重复输出（{{ similarPairs.length }} 对）

@@ -1428,7 +1428,14 @@ def _make_task_logger(
 ) -> Callable[[str], None]:
     log_dir = _app_root() / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"task_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    log_file = log_dir / f"task_{time.strftime('%Y%m%d_%H%M%S')}_{int(time.time() * 1000) % 1000:03d}.log"
+    # 自动清理旧日志：保留最近 50 个（本次将新建 1 个 → 清到 49 旧），避免长期使用无限增长
+    try:
+        old = sorted(log_dir.glob("task_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for stale in old[49:]:
+            stale.unlink(missing_ok=True)
+    except Exception:
+        pass
     lock = threading.Lock()
 
     def write(message: str) -> None:
@@ -1676,22 +1683,33 @@ def _fingerprint_cached(path: str, frames: int = 2) -> Optional[np.ndarray]:
     return fp
 
 
-def find_similar_outputs(outputs: list[str], threshold: float = 0.88) -> list[dict]:
+def find_similar_outputs(outputs: list[str], threshold: float = 0.88,
+                         progress: Optional[Callable[[int, int, str], None]] = None) -> list[dict]:
     """对输出文件两两比对感知哈希，返回疑似重复对 [{a, b, sim}]（按相似度降序）。
     threshold=0.88 表示两文件指纹差异 <12%（画面高度一致才报疑似重复）。
-    并发抽帧（最多 4 路）+ 进程内缓存，避免逐条串行启动 ffmpeg。"""
+    并发抽帧（最多 4 路）+ 进程内缓存，避免逐条串行启动 ffmpeg。
+    progress(done, total, stage)：stage='fingerprint' 抽帧阶段 / 'compare' 比对阶段。"""
     candidates = [p for p in outputs if p and os.path.isfile(p)]
     fps: dict[str, np.ndarray] = {}
     if candidates:
         from concurrent.futures import ThreadPoolExecutor
+        done = 0
         with ThreadPoolExecutor(max_workers=min(4, len(candidates))) as ex:
             for p, fp in zip(candidates, ex.map(_fingerprint_cached, candidates)):
+                done += 1
+                if progress:
+                    progress(done, len(candidates), "fingerprint")
                 if fp is not None:
                     fps[p] = fp
     paths = list(fps)
+    total_pairs = len(paths) * (len(paths) - 1) // 2
     pairs: list[dict] = []
+    checked = 0
     for i in range(len(paths)):
         for j in range(i + 1, len(paths)):
+            checked += 1
+            if progress:
+                progress(checked, total_pairs, "compare")
             total = fps[paths[i]].size
             dist = int(np.count_nonzero(fps[paths[i]] ^ fps[paths[j]]))
             sim = 1.0 - dist / total

@@ -17,6 +17,7 @@ const state = reactive({
   previewTrans: 'fade',
   similarPairs: [],   // 本次任务输出疑似重复对（感知哈希查重）
   deduping: false,    // 产物查重进行中（异步，后台比对中）
+  dedupProgress: null, // 查重进度 {stage, done, total}
   simPage: 1,         // 疑似重复列表当前页（每页 5 条）
   queue: [],          // 待执行任务队列
   dragQueueIdx: -1,   // 队列拖拽中的索引
@@ -808,6 +809,7 @@ async function startJob() {
   state.stepErrors[1] = false;
   state.similarPairs = [];  // 新任务开始，清空上次任务的疑似重复提示
   state.deduping = false;
+  state.dedupProgress = null;
   state.simPage = 1;
   // 开始前全局体检（每次实时检查，避免素材改动后状态过期）：有阻断问题则不启动
   await precheck();
@@ -948,6 +950,7 @@ async function poll() {
       state.job.failed_items = s.failed_items || [];
     }
     state.deduping = !!s.deduping;
+    state.dedupProgress = s.dedup_progress || null;
     // 版本更新检查（失败静默，不打扰）
     if (!state.updateInfo) {
       try {
@@ -1125,7 +1128,21 @@ createApp({
           healthTimer = setTimeout(() => precheck(true), 800);
         }
       );
-      setInterval(poll, 1000);
+      // 轮询：页面可见时每秒拉取状态；切到后台/隐藏时暂停，切回立即刷新——省 CPU 与网络
+      let pollTimer = null;
+      function startPoll() {
+        clearInterval(pollTimer);
+        pollTimer = setInterval(() => { if (!document.hidden) poll(); }, 1000);
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          clearInterval(pollTimer);
+        } else {
+          poll();
+          startPoll();
+        }
+      });
+      startPoll();
       poll();
     });
 

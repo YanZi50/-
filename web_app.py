@@ -208,6 +208,7 @@ class AppState:
         self.interrupted: dict | None = None
         self.similar_pairs: list[dict] = []  # 本次任务输出疑似重复对
         self.deduping: bool = False          # 产物查重是否进行中（异步，生成完成即返回，查重后台跑）
+        self.dedup_progress: dict | None = None  # 查重进度 {"stage", "done", "total"}（None=未在查重）
         self.last_speed: float | None = None  # 最近一次任务实测速度（条/秒，含并发）
         self.queue: list[dict] = []          # 待执行队列 [{id, label, payload}]
         self.queue_seq: int = 0
@@ -281,6 +282,7 @@ class AppState:
                 "unfinished": max(0, self.total - (self.result.success + self.result.skipped + self.result.failed)) if self.result else 0,
                 "cancelled": self.result.cancelled if self.result else False,
                 "deduping": self.deduping,
+                "dedup_progress": self.dedup_progress,
                 "failed_items": self.result.failed_items if self.result else [],
                 "success_items": _with_sizes(self.result.success_items) if self.result else [],
                 "error": self.error,
@@ -436,8 +438,13 @@ def _run_dedupe_async(out_paths: list[str]) -> None:
     """后台查重：生成完成后静默比对产物相似度，完成后推送结果与日志。
     注意：线程内已在 STATE.lock 保护下直接操作 logs（不能再调 add_log 嵌套加锁，会死锁）。"""
     STATE.deduping = True
+    STATE.dedup_progress = {"stage": "prepare", "done": 0, "total": len(out_paths or [])}
+
+    def progress(done: int, total: int, stage: str) -> None:
+        STATE.dedup_progress = {"stage": stage, "done": done, "total": total}
+
     try:
-        pairs = find_similar_outputs(out_paths)
+        pairs = find_similar_outputs(out_paths, progress=progress)
         with STATE.lock:
             if not STATE.deduping:
                 return  # 期间启动了新任务（状态被复位），放弃旧批次查重结果
@@ -453,6 +460,7 @@ def _run_dedupe_async(out_paths: list[str]) -> None:
             STATE.logs = STATE.logs[-1000:]
     finally:
         STATE.deduping = False
+        STATE.dedup_progress = None
 
 
 class Handler(BaseHTTPRequestHandler):
