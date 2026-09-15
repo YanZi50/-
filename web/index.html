@@ -90,10 +90,6 @@
               <div class="page-title">{{ pageTitle }}</div>
               <div class="page-desc">{{ pageDesc }}</div>
             </div>
-            <div class="btn-row">
-              <button v-if="step>1" class="btn plain" @click="goStep(step-1)">← 上一步</button>
-              <button v-if="step<5" class="btn" @click="goStep(step+1)">下一步 →</button>
-            </div>
           </div>
 
           <!-- ================= 步骤 1：素材 ================= -->
@@ -927,7 +923,12 @@
           </section>
 
           <!-- ================= 步骤 5：工具箱 ================= -->
-          <section v-show="step===5">
+          <section v-show="step===5" class="toolbox-page">
+            <div class="toolbox-bg" aria-hidden="true">
+              <div class="tb-orb tb-orb-1"></div>
+              <div class="tb-orb tb-orb-2"></div>
+              <div class="tb-orb tb-orb-3"></div>
+            </div>
             <div class="toolbox-tabs">
               <button v-for="t in toolboxTabs" :key="t.id" class="toolbox-tab"
                       :class="{active: toolboxUI.tab===t.id}" @click="toolboxUI.tab=t.id">
@@ -937,7 +938,7 @@
 
             <!-- 媒体工具 -->
             <div v-show="toolboxUI.tab==='media'">
-              <div class="card">
+              <div class="card glass">
                 <div class="card-title"><span class="bar"></span>FFmpeg 媒体工具
                   <span class="card-hint" style="font-weight:400">批量处理素材：转码 / 压缩 / 抽帧 / 音频 / 裁剪 / 合并</span>
                 </div>
@@ -1068,9 +1069,9 @@
                 </div>
 
                 <!-- 进度 -->
-                <div v-if="toolbox.total > 0" class="progress-wrap" style="margin-top:14px">
-                  <div class="progress-track">
-                    <div class="progress-bar" :style="{width: toolboxProgress + '%'}"></div>
+                <div v-if="toolbox.total > 0" style="margin-top:14px">
+                  <div class="progress-wrap">
+                    <div class="progress-inner" :style="{width: toolboxProgress + '%'}"></div>
                   </div>
                   <div class="progress-info">
                     <span v-if="toolbox.running">处理中 {{ toolbox.current }}/{{ toolbox.total }} · {{ toolbox.current_file }}</span>
@@ -1093,7 +1094,7 @@
             </div>
 
             <!-- 其他工具：建设中 -->
-            <div v-show="toolboxUI.tab!=='media'" class="card">
+            <div v-show="toolboxUI.tab!=='media'" class="card glass">
               <div class="card-title"><span class="bar"></span>{{ toolboxTabName }}
                 <span class="card-hint" style="font-weight:400">建设中</span>
               </div>
