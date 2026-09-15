@@ -987,10 +987,12 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def _run_task(self, config: JobConfig, label: str, mode: str, failed_items: list[dict] | None = None,
-                  skip_existing: bool = True) -> None:
+                  skip_existing: bool = True, record_last: bool = True) -> None:
         STATE.cancel_event.clear()
         STATE.pause_event.clear()
-        STATE.last_config = config
+        # 预览为临时任务：不覆盖 last_config（重试/断点续跑/刷新恢复仍用上次正式任务的配置），避免"本次生成参数"被预览污染
+        if record_last:
+            STATE.last_config = config
         STATE.last_failed_items = []
         STATE.result = None
         STATE.error = None
@@ -1363,7 +1365,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         register_allowed_dir(str(PREVIEW_DIR))
-        self._run_task(config, "预览", "preview", skip_existing=False)
+        self._run_task(config, "预览", "preview", skip_existing=False, record_last=False)
         self._send_json({"ok": True})
 
     def _retry_failed(self) -> None:

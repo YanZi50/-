@@ -834,6 +834,7 @@ async function previewJob() {
     body: JSON.stringify(payload),
   });
   if (!data.ok) { showMsg(data.error || '预览失败', 'error'); return; }
+  state.taskSnapshot = { ...payload, count: 1, output_folder: '（预览临时目录）' };  // 预览用最新参数快照，标注预览语义
   state.job = { ...state.job, running: true, done: false, current: 0, total: 1, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
   state.previewRequested = true; // 仅「生成预览」触发的单条任务完成后显示预览
   state.previewUrl = '';
@@ -966,7 +967,8 @@ async function poll() {
       if (s.success_items && s.success_items[0] && state.previewRequested && state.job.total === 1) {
         const it = s.success_items[0];
         const m = String(it.output).match(/^(.+)[\\/]([^\\/]+)$/);
-        if (m) state.previewUrl = '/api/download?folder=' + encodeURIComponent(m[1]) + '&name=' + encodeURIComponent(m[2]);
+        // 时间戳防缓存：预览文件名固定（preview_001_开头_结尾），URL 相同会让浏览器沿用旧视频
+        if (m) state.previewUrl = '/api/download?folder=' + encodeURIComponent(m[1]) + '&name=' + encodeURIComponent(m[2]) + '&_t=' + Date.now();
         state.previewRequested = false;
       }
       refreshOutputFiles();
