@@ -992,7 +992,7 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def _run_task(self, config: JobConfig, label: str, mode: str, failed_items: list[dict] | None = None,
-                  skip_existing: bool = True, record_last: bool = True) -> None:
+                  skip_existing: bool = True, record_last: bool = True, record_history: bool = True) -> None:
         STATE.cancel_event.clear()
         STATE.pause_event.clear()
         # 预览为临时任务：不覆盖 last_config（重试/断点续跑/刷新恢复仍用上次正式任务的配置），避免"本次生成参数"被预览污染
@@ -1053,7 +1053,7 @@ class Handler(BaseHTTPRequestHandler):
                     "cancelled": result.cancelled,
                     "elapsed_sec": round(max(0, time.time() - (STATE.started_at or time.time())), 1),
                 }
-                save_history(record)
+                save_history(record) if record_history else None
                 # 记录最近任务实测速度（条/秒，含并发），供下次预检估算生成时间
                 if result.success and STATE.started_at:
                     elapsed = time.time() - STATE.started_at
@@ -1361,16 +1361,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         config.count = 1
         config.output_folder = str(PREVIEW_DIR)
-        config.output_name_template = "preview_{序号}_{开头}_{结尾}"
-        # 预览语义 = 按当前配置生成 1 条看效果：清空旧预览文件（不堆积、不跳过、始终全新生成）
+        # 预览命名 = 预览 + 时间戳（模板 {日期}_{时间} 自动追加序号，同秒也不冲突）；与素材名解耦
+        config.output_name_template = "preview_{日期}_{时间}"
+        # 预览只作为参数配置的试片：保留最近 5 个预览文件便于对比参数效果。
+        # 生成前清理到 4 个旧文件（本次将生成 1 个 → 恰好 5 个），避免"旧5+新1=6"
         try:
-            for old in PREVIEW_DIR.glob("*"):
-                if old.is_file():
-                    old.unlink(missing_ok=True)
+            old_files = sorted(PREVIEW_DIR.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+            for old in old_files[4:]:
+                old.unlink(missing_ok=True)
         except Exception:
             pass
         register_allowed_dir(str(PREVIEW_DIR))
-        self._run_task(config, "预览", "preview", skip_existing=False, record_last=False)
+        self._run_task(config, "预览", "preview", skip_existing=False, record_last=False, record_history=False)
         self._send_json({"ok": True})
 
     def _retry_failed(self) -> None:

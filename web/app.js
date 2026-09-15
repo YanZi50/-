@@ -821,10 +821,11 @@ async function startJob() {
   });
   if (!data.ok) { showMsg(data.error || '启动失败', 'error'); return; }
   state.taskSnapshot = { ...payload };  // 参数快照：生成期间改动参数不影响本次任务，此处留档核对
+  state.suppressResultSync = false; // 正式任务：结果列表正常同步
   state.outputFolder = payload.output_folder;
   // total 用后端实际将生成的条数（组合不足时不显示虚高的请求数）
   const total = Number(data.total) > 0 ? Number(data.total) : Number(payload.count);
-  state.job = { ...state.job, running: true, done: false, current: 0, total, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
+  state.job = { ...state.job, running: true, done: false, current: 0, total, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null, isPreview: false };
   state.previewRequested = false; // 普通生成任务不自动显示预览
   state.previewUrl = '';
   showMsg('任务已启动', 'success');
@@ -836,12 +837,13 @@ async function previewJob() {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!data.ok) { showMsg(data.error || '预览失败', 'error'); return; }
-  state.taskSnapshot = { ...payload, count: 1, output_folder: '（预览临时目录）' };  // 预览用最新参数快照，标注预览语义
-  state.job = { ...state.job, running: true, done: false, current: 0, total: 1, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null };
-  state.previewRequested = true; // 仅「生成预览」触发的单条任务完成后显示预览
+  if (!data.ok) { showMsg(data.error || '试片失败', 'error'); return; }
+  state.taskSnapshot = { ...payload, count: 1, output_folder: '（试片临时目录）' };  // 试片用最新参数快照，标注试片语义
+  state.suppressResultSync = true; // 试片结果不进生成结果列表（startJob 时复位）
+  state.job = { ...state.job, running: true, done: false, current: 0, total: 1, logs: [], success: 0, failed: 0, skipped: 0, cancelled: false, success_items: [], failed_items: [], error: null, isPreview: true };
+  state.previewRequested = true; // 仅「试片」触发的单条任务完成后显示预览
   state.previewUrl = '';
-  showMsg('预览生成中', 'info');
+  showMsg('试片生成中', 'info');
 }
 
 async function togglePause() {
@@ -940,8 +942,11 @@ async function poll() {
     state.job.eta = s.eta_seconds;
     state.job.speed = s.speed_per_sec != null ? s.speed_per_sec * 60 : null;
     state.job.logs = s.logs || [];
-    state.job.success_items = s.success_items || [];
-    state.job.failed_items = s.failed_items || [];
+    // 试片期间/之后：结果列表不同步后端试片产物，避免污染正式生成结果区（startJob 会复位）
+    if (!state.suppressResultSync) {
+      state.job.success_items = s.success_items || [];
+      state.job.failed_items = s.failed_items || [];
+    }
     state.deduping = !!s.deduping;
     // 版本更新检查（失败静默，不打扰）
     if (!state.updateInfo) {
@@ -965,6 +970,19 @@ async function poll() {
     }
     if (!s.running && state.job.done === false && (s.success > 0 || s.failed > 0 || s.skipped > 0 || s.cancelled)) {
       state.job.done = true;
+      // 试片与正式结果完全隔离：只更新预览播放器，不刷新结果列表/历史/查重，不弹正式任务完成提示
+      if (state.job.isPreview) {
+        state.job.isPreview = false;
+        if (s.success_items && s.success_items[0] && state.previewRequested) {
+          const it = s.success_items[0];
+          const m = String(it.output).match(/^(.+)[\\/]([^\\/]+)$/);
+          if (m) state.previewUrl = '/api/download?folder=' + encodeURIComponent(m[1]) + '&name=' + encodeURIComponent(m[2]) + '&_t=' + Date.now();
+        }
+        state.previewRequested = false;
+        state.job = { ...state.job, done: false, running: false, success_items: [], failed_items: [], logs: [], success: 0, failed: 0, skipped: 0 };
+        showMsg(s.error ? '试片失败：' + s.error : '试片已生成', s.error ? 'error' : 'success');
+        return;
+      }
       state.resultPage = 1;
       state.simPage = 1;
       if (s.success_items && s.success_items[0] && state.previewRequested && state.job.total === 1) {
