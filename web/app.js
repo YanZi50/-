@@ -552,7 +552,7 @@ async function enrichMaterials(files, kind = '', concurrency = 6) {
         const ok = kind === 'bgm' ? (d.ok && (d.has_video || d.has_audio)) : (d.ok && d.has_video);
         out[i] = {
           path: f.path, name: f.name, ok, dup: !!f._dup,
-          thumbUrl: thumbUrl(f.path),
+          thumbUrl: kind === 'bgm' ? null : thumbUrl(f.path),  // 音频无视频帧：不请求缩略图，前端显示音乐占位
           duration: d.duration || 0,
           width: d.width || 0, height: d.height || 0,
           landscape: (d.width || 0) >= (d.height || 0),

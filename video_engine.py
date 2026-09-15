@@ -121,7 +121,9 @@ def probe_media(path: str, require_video: bool = True) -> dict:
     except OSError:
         return {"ok": False, "error": "文件不存在"}
     with _probe_lock:
-        hit = _probe_cache.get(path)
+        # 缓存 key 必须区分 require_video：否则"先按音频标准探测 ok=True、再按视频标准探测"会命中错误缓存，
+        # 导致音频文件缩略图/健康判断错乱（显示损坏或无法抽帧）
+        hit = _probe_cache.get((path, require_video))
         if hit and hit[0] == mtime and now - hit[1] < _PROBE_TTL:
             return hit[2]
     cmd = [
@@ -168,7 +170,7 @@ def probe_media(path: str, require_video: bool = True) -> dict:
         "ok": bool(duration > 0.05 and (has_video if require_video else (has_video or has_audio))),
     }
     with _probe_lock:
-        _probe_cache[path] = (mtime, now, result)
+        _probe_cache[(path, require_video)] = (mtime, now, result)
     return result
 
 
