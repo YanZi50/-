@@ -877,3 +877,16 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .vol-ico { font-size: 11px; opacity: .75; }
 .vol-slider { flex: 1; min-width: 0; height: 3px; accent-color: var(--accent); cursor: pointer; }
 .vol-val { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); width: 26px; text-align: right; flex-shrink: 0; }
+
+/* 工具箱（第5步） */
+.toolbox-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.toolbox-tab { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-soft); color: var(--text-2); cursor: pointer; font-size: 13px; transition: all .15s; }
+.toolbox-tab:hover { border-color: var(--accent); color: var(--text-1); }
+.toolbox-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.result-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.result-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; background: var(--bg-soft); border: 1px solid var(--border); font-size: 12px; }
+.badge { flex-shrink: 0; padding: 1px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.badge.ok { background: rgba(46,204,113,.15); color: #2ecc71; }
+.badge.fail { background: rgba(231,76,60,.15); color: #e74c3c; }
+.result-item.ok { border-color: rgba(46,204,113,.3); }
+.result-item.fail { border-color: rgba(231,76,60,.4); }

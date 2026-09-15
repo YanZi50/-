@@ -30,6 +30,8 @@ from history_store import clear_history, list_history, save_history
 from template_store import delete_template, list_templates, load_template, save_template
 from platform_presets import apply_preset, get_presets
 import subtitle_plugin
+from toolbox import engine as toolbox_engine
+from toolbox.engine import TOOL_NAMES
 
 from video_engine import (
     BatchResult,
@@ -215,6 +217,19 @@ class AppState:
         self.queue_seq: int = 0
         self.update_info: dict | None = None  # 版本更新检查结果（失败保持 None，静默）
         self.update_download: dict | None = None  # 更新包下载状态 {"stage","done","total","error"}（None=未下载）
+        # 工具箱任务状态（docs/工具箱设计方案.md）
+        self.toolbox: dict = {
+            "running": False,
+            "stage": "idle",          # idle/running/done/cancelled/error
+            "tool": "",
+            "current": 0,
+            "total": 0,
+            "current_file": "",
+            "results": [],            # [{name, status: ok|fail, detail}]
+            "cancel": False,
+            "out_dir": "",
+            "error": None,
+        }
 
     def add_log(self, message: str) -> None:
         with self.lock:
@@ -286,6 +301,7 @@ class AppState:
                 "deduping": self.deduping,
                 "dedup_progress": self.dedup_progress,
                 "update_download": self.update_download,
+                "toolbox": dict(self.toolbox),
                 "portable": bool(getattr(sys, "frozen", False)),
                 "failed_items": self.result.failed_items if self.result else [],
                 "success_items": _with_sizes(self.result.success_items) if self.result else [],
@@ -360,6 +376,68 @@ def _run_ps_file(script_body: str, timeout: int = 300) -> str:
             os.unlink(tmp)
         except OSError:
             pass
+
+
+def _toolbox_worker(tool: str, files: list[str], params: dict, out_dir: str) -> None:
+    """工具箱后台线程：逐文件处理，渐进更新 STATE.toolbox。"""
+    results: list[dict] = []
+    total = len(files)
+    try:
+        if tool == "concat":
+            # 合并：全部文件按文件名顺序拼为一条视频
+            list_file = os.path.join(tempfile.gettempdir(), f"toolbox_concat_{time.time_ns()}.txt")
+            toolbox_engine.build_concat_list(files, list_file)
+            suffix = toolbox_engine.suffix_for(tool, params, files[0])
+            dst = toolbox_engine._unique_dst(out_dir, "合并_" + time.strftime("%Y%m%d_%H%M%S"), suffix)
+            try:
+                STATE.toolbox["current"] = 0
+                STATE.toolbox["current_file"] = f"共 {total} 个文件"
+                toolbox_engine.run_tool(tool, list_file, dst, params, lambda: STATE.toolbox.get("cancel"))
+                results.append({"name": "合并结果", "status": "ok", "detail": Path(dst).name})
+            except toolbox_engine.MediaError as e:
+                results.append({"name": "合并结果", "status": "fail", "detail": str(e)})
+            finally:
+                try:
+                    os.unlink(list_file)
+                except OSError:
+                    pass
+            STATE.toolbox["results"] = results
+            STATE.toolbox["current"] = total
+            STATE.toolbox["total"] = total
+            STATE.toolbox["stage"] = "done" if not STATE.toolbox.get("cancel") else "cancelled"
+            return
+        for i, src in enumerate(files, 1):
+            if STATE.toolbox.get("cancel"):
+                STATE.toolbox["stage"] = "cancelled"
+                break
+            STATE.toolbox["current"] = i
+            STATE.toolbox["current_file"] = Path(src).name
+            try:
+                if tool == "extract_frames":
+                    sub = Path(src).stem
+                    dst_dir = Path(out_dir) / sub
+                    dst_dir.mkdir(parents=True, exist_ok=True)
+                    toolbox_engine.run_tool(tool, src, str(dst_dir), params, lambda: STATE.toolbox.get("cancel"))
+                    results.append({"name": Path(src).name, "status": "ok", "detail": f"已输出 → {sub}/"})
+                else:
+                    suffix = toolbox_engine.suffix_for(tool, params, src)
+                    dst = toolbox_engine._unique_dst(out_dir, Path(src).stem, suffix)
+                    toolbox_engine.run_tool(tool, src, dst, params, lambda: STATE.toolbox.get("cancel"))
+                    results.append({"name": Path(src).name, "status": "ok", "detail": Path(dst).name})
+            except toolbox_engine.MediaError as e:
+                results.append({"name": Path(src).name, "status": "fail", "detail": str(e)})
+            except Exception as e:  # noqa: BLE001
+                results.append({"name": Path(src).name, "status": "fail", "detail": f"未知错误：{e}"})
+            STATE.toolbox["results"] = list(results)
+        STATE.toolbox["total"] = total
+        STATE.toolbox["current"] = min(STATE.toolbox.get("current") or 0, total)
+        if STATE.toolbox.get("stage") != "cancelled":
+            STATE.toolbox["stage"] = "done"
+    except Exception as e:  # noqa: BLE001
+        STATE.toolbox["error"] = str(e)
+        STATE.toolbox["stage"] = "error"
+    finally:
+        STATE.toolbox["running"] = False
 
 
 def run_folder_dialog(description: str) -> str:
@@ -601,6 +679,11 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/status":
             self._send_json(STATE.status_dict())
             return
+        if route == "/api/toolbox/status":
+            tb = dict(STATE.toolbox)
+            tb["results"] = list(tb.get("results") or [])
+            self._send_json(tb)
+            return
         if route == "/api/ping":
             self._send_json({"ok": True})
             return
@@ -673,6 +756,8 @@ class Handler(BaseHTTPRequestHandler):
                 "middle": "选择中间素材文件夹",
                 "output": "选择输出路径",
                 "bgm": "选择音乐文件夹",
+                "toolbox": "选择要处理的素材文件夹",
+                "toolbox_out": "选择工具箱输出目录",
             }.get(name, "选择文件夹")
             if not SELECT_LOCK.acquire(blocking=False):
                 self._send_json({"busy": True, "path": ""})
@@ -825,6 +910,18 @@ class Handler(BaseHTTPRequestHandler):
             STATE.add_log("已请求取消")
             self._send_json({"ok": True})
             return
+        if route == "/api/toolbox/run":
+            self._toolbox_run()
+            return
+        if route == "/api/toolbox/cancel":
+            STATE.toolbox["cancel"] = True
+            self._send_json({"ok": True})
+            return
+        if route == "/api/toolbox/clear_results":
+            STATE.toolbox["results"] = []
+            STATE.toolbox["stage"] = "idle"
+            self._send_json({"ok": True})
+            return
         if route == "/api/shutdown":
             # 便携版"退出程序"：先返回响应，再在独立线程中关闭服务（shutdown 需在 serve_forever 线程外调用）
             self._send_json({"ok": True, "msg": "程序已退出，可关闭本页面"})
@@ -847,6 +944,49 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"paused": STATE.paused})
             return
         self._send_json({"error": "not found"}, 404)
+
+    # ----------------------------------------------------------------
+    # 工具箱：媒体工具（docs/工具箱设计方案.md 第 7 节）
+    # ----------------------------------------------------------------
+    def _toolbox_run(self) -> None:
+        if STATE.toolbox.get("running"):
+            self._send_json({"ok": False, "error": "已有工具箱任务正在运行"}, 409)
+            return
+        payload = self._read_json()
+        tool = str(payload.get("tool") or "").strip()
+        folder = str(payload.get("folder") or "").strip()
+        out_dir = str(payload.get("out_dir") or "").strip()
+        params = payload.get("params") or {}
+        kind = str(payload.get("kind") or "video")
+
+        if tool not in TOOL_NAMES:
+            self._send_json({"ok": False, "error": f"未知工具：{tool}"}, 400)
+            return
+        if not folder or not os.path.isdir(folder):
+            self._send_json({"ok": False, "error": "请先选择有效的输入文件夹"}, 400)
+            return
+        if not out_dir:
+            self._send_json({"ok": False, "error": "请选择输出目录"}, 400)
+            return
+        try:
+            files = toolbox_engine.collect_files(folder, kind)
+        except toolbox_engine.MediaError as e:
+            self._send_json({"ok": False, "error": str(e)}, 400)
+            return
+        if tool == "concat" and len(files) < 2:
+            self._send_json({"ok": False, "error": "合并至少需要 2 个视频文件"}, 400)
+            return
+        if not files:
+            self._send_json({"ok": False, "error": "所选文件夹中没有可处理的文件"}, 400)
+            return
+
+        STATE.toolbox.update({
+            "running": True, "stage": "running", "tool": tool,
+            "current": 0, "total": len(files), "current_file": "",
+            "results": [], "cancel": False, "out_dir": out_dir, "error": None,
+        })
+        threading.Thread(target=_toolbox_worker, args=(tool, files, params, out_dir), daemon=True).start()
+        self._send_json({"ok": True, "total": len(files)})
 
     # ----------------------------------------------------------------
     # 素材与文件

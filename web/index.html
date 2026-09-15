@@ -40,6 +40,10 @@
             <span class="step-num">4</span>
             <span>生成与结果</span>
           </div>
+          <div class="step-item" :class="{active: step===5}" @click="goStep(5)">
+            <span class="step-num">5</span>
+            <span>工具箱</span>
+          </div>
         </nav>
 
         <div class="sidebar-foot">
@@ -88,7 +92,7 @@
             </div>
             <div class="btn-row">
               <button v-if="step>1" class="btn plain" @click="goStep(step-1)">← 上一步</button>
-              <button v-if="step<4" class="btn" @click="goStep(step+1)">下一步 →</button>
+              <button v-if="step<5" class="btn" @click="goStep(step+1)">下一步 →</button>
             </div>
           </div>
 
@@ -919,6 +923,183 @@
                 </div>
               </div>
               <div v-else class="empty">暂无历史记录</div>
+            </div>
+          </section>
+
+          <!-- ================= 步骤 5：工具箱 ================= -->
+          <section v-show="step===5">
+            <div class="toolbox-tabs">
+              <button v-for="t in toolboxTabs" :key="t.id" class="toolbox-tab"
+                      :class="{active: toolboxUI.tab===t.id}" @click="toolboxUI.tab=t.id">
+                {{ t.name }}
+              </button>
+            </div>
+
+            <!-- 媒体工具 -->
+            <div v-show="toolboxUI.tab==='media'">
+              <div class="card">
+                <div class="card-title"><span class="bar"></span>FFmpeg 媒体工具
+                  <span class="card-hint" style="font-weight:400">批量处理素材：转码 / 压缩 / 抽帧 / 音频 / 裁剪 / 合并</span>
+                </div>
+                <div class="form-grid" style="margin-top:12px">
+                  <div class="field">
+                    <div class="field-label">输入文件夹</div>
+                    <div class="folder-row">
+                      <input class="input input-path" placeholder="选择要处理的素材文件夹" v-model="toolboxUI.folder">
+                      <button class="btn plain" @click="toolboxSelect('in')" :disabled="selectBusy">选择</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <div class="field-label">输出目录</div>
+                    <div class="folder-row">
+                      <input class="input input-path" placeholder="选择工具箱输出目录" v-model="toolboxUI.out_dir">
+                      <button class="btn plain" @click="toolboxSelect('out')" :disabled="selectBusy">选择</button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <div class="field-label">文件类型</div>
+                    <select class="input" v-model="toolboxUI.kind">
+                      <option value="video">视频（mp4/mov/mkv/webm 等）</option>
+                      <option value="audio">音频（mp3/wav/m4a/flac 等）</option>
+                      <option value="all">全部媒体文件</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <div class="field-label">工具</div>
+                    <select class="input" v-model="toolboxUI.tool">
+                      <option value="transcode">转码（改格式/分辨率/码率/帧率）</option>
+                      <option value="compress">压缩（控制体积与质量）</option>
+                      <option value="extract_frames">抽帧（按秒截取画面）</option>
+                      <option value="audio">音频（提取音轨 / 转格式）</option>
+                      <option value="clip">裁剪（按时间段截取）</option>
+                      <option value="concat">合并（多段拼一条）</option>
+                    </select>
+                  </div>
+
+                  <!-- 转码参数 -->
+                  <template v-if="toolboxUI.tool==='transcode'">
+                    <div class="field"><div class="field-label">输出格式</div>
+                      <select class="input" v-model="toolboxUI.p.format">
+                        <option value="mp4">MP4（H.264）</option><option value="mov">MOV</option>
+                        <option value="mkv">MKV</option><option value="webm">WebM</option>
+                      </select></div>
+                    <div class="field"><div class="field-label">分辨率</div>
+                      <input class="input" v-model="toolboxUI.p.resolution" placeholder="原始 / 1080x1920 / 自定义宽x高">
+                    </div>
+                    <div class="field"><div class="field-label">码率（kbps，留空=CRF 自动）</div>
+                      <input class="input" type="number" min="100" max="100000" v-model.number="toolboxUI.p.bitrate" placeholder="如 4000">
+                    </div>
+                    <div class="field"><div class="field-label">帧率（留空=保持原始）</div>
+                      <input class="input" type="number" min="1" max="120" v-model.number="toolboxUI.p.fps" placeholder="如 30">
+                    </div>
+                    <div class="field"><div class="field-label">编码质量 CRF（越小越清晰越慢，18~28）</div>
+                      <input class="input" type="number" min="18" max="28" v-model.number="toolboxUI.p.crf">
+                    </div>
+                  </template>
+
+                  <!-- 压缩参数 -->
+                  <template v-if="toolboxUI.tool==='compress'">
+                    <div class="field"><div class="field-label">质量 CRF（18 最小≈无损，28 体积小画质略降）</div>
+                      <input class="input" type="number" min="18" max="28" v-model.number="toolboxUI.p.crf">
+                    </div>
+                    <div class="field"><div class="field-label">最长边像素（0=不限制）</div>
+                      <input class="input" type="number" min="0" max="4096" v-model.number="toolboxUI.p.max_side">
+                    </div>
+                  </template>
+
+                  <!-- 抽帧参数 -->
+                  <template v-if="toolboxUI.tool==='extract_frames'">
+                    <div class="field"><div class="field-label">抽帧方式</div>
+                      <select class="input" v-model="toolboxUI.p.mode">
+                        <option value="per_second">每秒 N 帧</option>
+                        <option value="per_n_seconds">每 N 秒 1 帧</option>
+                      </select></div>
+                    <div class="field"><div class="field-label">数值</div>
+                      <input class="input" type="number" min="0.1" step="0.1" v-model.number="toolboxUI.p.value">
+                    </div>
+                    <div class="field"><div class="field-label">图片格式</div>
+                      <select class="input" v-model="toolboxUI.p.img">
+                        <option value="jpg">JPG</option><option value="png">PNG</option>
+                      </select></div>
+                  </template>
+
+                  <!-- 音频参数 -->
+                  <template v-if="toolboxUI.tool==='audio'">
+                    <div class="field"><div class="field-label">动作</div>
+                      <select class="input" v-model="toolboxUI.p.action">
+                        <option value="extract">提取音轨（去画面）</option>
+                      </select></div>
+                    <div class="field"><div class="field-label">输出格式</div>
+                      <select class="input" v-model="toolboxUI.p.audio_format">
+                        <option value="mp3">MP3</option><option value="wav">WAV</option>
+                        <option value="m4a">M4A</option><option value="flac">FLAC</option>
+                      </select></div>
+                  </template>
+
+                  <!-- 裁剪参数 -->
+                  <template v-if="toolboxUI.tool==='clip'">
+                    <div class="field"><div class="field-label">起始（秒）</div>
+                      <input class="input" type="number" min="0" step="0.1" v-model.number="toolboxUI.p.start">
+                    </div>
+                    <div class="field"><div class="field-label">结束（秒，可留空）</div>
+                      <input class="input" type="number" min="0" step="0.1" v-model.number="toolboxUI.p.end">
+                    </div>
+                    <div class="field"><div class="field-label">时长（秒，可留空；与结束二选一）</div>
+                      <input class="input" type="number" min="0.1" step="0.1" v-model.number="toolboxUI.p.duration">
+                    </div>
+                  </template>
+
+                  <!-- 合并参数 -->
+                  <template v-if="toolboxUI.tool==='concat'">
+                    <div class="field" style="grid-column:1/-1"><div class="field-label">合并说明</div>
+                      <div class="card-hint">把输入文件夹内所有视频按文件名顺序合并为一条（不同分辨率会自动归一化）。</div>
+                    </div>
+                    <div class="field"><div class="field-label">统一分辨率（留空=跟随第一个片段）</div>
+                      <input class="input" v-model="toolboxUI.p.resolution" placeholder="如 1080x1920">
+                    </div>
+                  </template>
+                </div>
+
+                <div class="btn-row" style="margin-top:14px">
+                  <button class="btn" @click="toolboxRun" :disabled="toolbox.running">开始处理</button>
+                  <button v-if="toolbox.running" class="btn plain" @click="toolboxCancel">取消</button>
+                  <button class="btn plain" @click="toolboxClear" :disabled="toolbox.running || !toolbox.results.length">清空结果</button>
+                  <button class="btn plain" @click="toolboxOpenOut" :disabled="!toolboxUI.out_dir">打开输出目录</button>
+                </div>
+
+                <!-- 进度 -->
+                <div v-if="toolbox.total > 0" class="progress-wrap" style="margin-top:14px">
+                  <div class="progress-track">
+                    <div class="progress-bar" :style="{width: toolboxProgress + '%'}"></div>
+                  </div>
+                  <div class="progress-info">
+                    <span v-if="toolbox.running">处理中 {{ toolbox.current }}/{{ toolbox.total }} · {{ toolbox.current_file }}</span>
+                    <span v-else-if="toolbox.stage==='done'">已完成 {{ toolbox.total }} 个文件</span>
+                    <span v-else-if="toolbox.stage==='cancelled'">已取消（完成 {{ toolbox.results.length }} 个）</span>
+                    <span v-else-if="toolbox.stage==='error'">出错：{{ toolbox.error }}</span>
+                  </div>
+                </div>
+
+                <!-- 结果列表 -->
+                <div v-if="toolbox.results.length" class="result-list" style="margin-top:12px">
+                  <div class="result-item" v-for="(r, i) in toolbox.results" :key="i"
+                       :class="r.status==='ok' ? 'ok' : 'fail'">
+                    <span class="badge" :class="r.status==='ok' ? 'ok' : 'fail'">{{ r.status==='ok' ? '成功' : '失败' }}</span>
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</span>
+                    <span class="card-hint" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.detail }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 其他工具：建设中 -->
+            <div v-show="toolboxUI.tab!=='media'" class="card">
+              <div class="card-title"><span class="bar"></span>{{ toolboxTabName }}
+                <span class="card-hint" style="font-weight:400">建设中</span>
+              </div>
+              <div class="empty" style="padding:36px 0">
+                该功能正在开发中，后续版本开放（详见 docs/工具箱设计方案.md）
+              </div>
             </div>
           </section>
 

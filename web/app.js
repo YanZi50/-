@@ -33,6 +33,20 @@ const state = reactive({
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
+  toolbox: { running: false, stage: 'idle', tool: '', current: 0, total: 0, current_file: '', results: [], cancel: false, out_dir: '', error: null },
+  toolboxUI: {
+    tab: 'media',           // media/asr/subtitle/cut/match
+    folder: '',             // 输入文件夹
+    out_dir: '',            // 输出目录
+    kind: 'video',          // video/audio/all
+    tool: 'transcode',
+    p: {                    // 各工具参数（按工具取用）
+      format: 'mp4', resolution: '', crf: 23, bitrate: '', fps: '', encoder: 'h264',
+      mode: 'per_second', value: 1, img: 'jpg',
+      action: 'extract', audio_format: 'mp3',
+      start: 0, end: '', duration: '', max_side: 0,
+    },
+  },
   materialSearch: { head: '', tail: '', bgm: '' },   // 素材库关键字搜索
   soundOn: localStorage.getItem('sppj_sound') !== 'off',  // 任务完成提示音
   middlePools: [{ id: 1, folder: '', items: [], count: 1, files: [], expanded: false, search: '' }],
@@ -129,12 +143,30 @@ function updateFailedTip(err) {
 }
 
 /* ---------- 页面标题 ---------- */
-const pageTitle = computed(() => ['', '素材库', '参数配置', '去重差异化', '生成与结果'][state.step]);
+const toolboxTabs = [
+  { id: 'media', name: '媒体工具' },
+  { id: 'asr', name: '语音识别与索引' },
+  { id: 'subtitle', name: '字幕包装' },
+  { id: 'cut', name: '剪气口' },
+  { id: 'match', name: '文本匹配拼接' },
+];
+const toolboxTabName = computed(() => {
+  const t = toolboxTabs.find((x) => x.id === state.toolboxUI.tab);
+  return t ? t.name : '工具箱';
+});
+const toolboxProgress = computed(() => {
+  const total = state.toolbox.total || 0;
+  if (!total) return 0;
+  const pct = Math.round(((state.toolbox.current || 0) / total) * 100);
+  return Math.max(0, Math.min(100, pct));
+});
+const pageTitle = computed(() => ['', '素材库', '参数配置', '去重差异化', '生成与结果', '工具箱'][state.step]);
 const pageDesc = computed(() => ({
   1: '选择素材文件夹，点击卡片设置固定片头/片尾',
   2: '配置分辨率、时长、转场、BGM、水印等参数',
   3: '设置差异化强度与维度，降低同批投放被判重概率',
   4: '预检素材、批量生成、查看结果与历史',
+  5: '媒体工具、语音识别、字幕包装、剪气口、文本匹配拼接',
 }[state.step]));
 
 /* ---------- 产出概览（预检后展示） ---------- */
@@ -657,6 +689,71 @@ async function selectPoolFolder(pool) {
   }
 }
 
+/* ---------- 工具箱（第 5 步） ---------- */
+async function toolboxSelect(which) {
+  if (state.selectBusy) { showMsg('文件夹选择窗口已打开', 'info'); return; }
+  state.selectBusy = true;
+  try {
+    const data = await api('/api/select_folder?name=' + (which === 'out' ? 'toolbox_out' : 'toolbox'));
+    if (data.busy) { showMsg('文件夹选择窗口已打开', 'info'); return; }
+    if (!data.path) return;
+    if (which === 'out') state.toolboxUI.out_dir = data.path;
+    else state.toolboxUI.folder = data.path;
+  } catch (e) {
+    showMsg('选择失败：' + e.message, 'error');
+  } finally {
+    state.selectBusy = false;
+  }
+}
+
+function toolboxParams() {
+  const p = { ...state.toolboxUI.p };
+  // 仅传当前工具关心的参数（避免无关参数干扰后端）
+  const t = state.toolboxUI.tool;
+  const keep = {
+    transcode: ['format', 'resolution', 'crf', 'bitrate', 'fps', 'encoder'],
+    compress: ['crf', 'max_side'],
+    extract_frames: ['mode', 'value', 'img'],
+    audio: ['action', 'audio_format'],
+    clip: ['start', 'end', 'duration'],
+    concat: ['resolution'],
+  }[t] || [];
+  const out = {};
+  for (const k of keep) if (p[k] !== undefined && p[k] !== '') out[k] = p[k];
+  if (t === 'clip' && out.end) delete out.duration;
+  return out;
+}
+
+async function toolboxRun() {
+  if (state.toolbox.running) return;
+  if (!state.toolboxUI.folder) { showMsg('请先选择输入文件夹', 'error'); return; }
+  if (!state.toolboxUI.out_dir) { showMsg('请先选择工具箱输出目录', 'error'); return; }
+  const payload = {
+    tool: state.toolboxUI.tool,
+    folder: state.toolboxUI.folder,
+    out_dir: state.toolboxUI.out_dir,
+    kind: state.toolboxUI.kind,
+    params: toolboxParams(),
+  };
+  const r = await api('/api/toolbox/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  if (!r || !r.ok) { showMsg((r && r.error) || '启动失败', 'error'); return; }
+  showMsg(`已开始处理 ${r.total} 个文件`, 'success');
+}
+
+async function toolboxCancel() {
+  if (!state.toolbox.running) return;
+  await api('/api/toolbox/cancel', {});
+  showMsg('已请求取消工具箱任务', 'info');
+}
+
+async function toolboxClear() {
+  await api('/api/toolbox/clear_results', {});
+}
+
+function toolboxOpenOut() {
+  if (state.toolboxUI.out_dir) api('/api/open_folder', { folder: state.toolboxUI.out_dir });
+}
+
 /* ---------- 水印选择（服务端文件对话框，直接引用本地文件，不拷贝） ---------- */
 
 async function pickWatermark(e) {
@@ -980,6 +1077,7 @@ async function poll() {
     state.deduping = !!s.deduping;
     state.dedupProgress = s.dedup_progress || null;
     state.portable = !!s.portable;
+    if (s.toolbox) state.toolbox = s.toolbox;
     // 更新下载状态
     if (s.update_download) {
       const wasReady = state.updateDownload && state.updateDownload.stage === 'ready';
@@ -1188,6 +1286,7 @@ createApp({
     return {
       ...Vue.toRefs(state),
       state, pageTitle, pageDesc,
+      toolboxTabs, toolboxTabName, toolboxProgress,
       // 选项表：动态（后端 /api/options 拉取后原地更新 + optionsRev 驱动重渲染）
       transitionOptions: computed(() => { optionsRev.value; return transitionOptions; }),
       dedupeLevels: computed(() => { optionsRev.value; return dedupeLevels; }),
@@ -1204,6 +1303,7 @@ createApp({
       selectAllTransitions, clearTransitions, setTransitionDuration,
       selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
+      toolboxSelect, toolboxRun, toolboxCancel, toolboxClear, toolboxOpenOut,
       matVol, setMatVol,
       selectPoolFolder, addMiddlePool, removeMiddlePool, scanPool,
       togglePoolItem, poolOrder, togglePoolExpand,
