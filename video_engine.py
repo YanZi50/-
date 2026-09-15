@@ -1519,20 +1519,13 @@ def _frame_dhash(gray9x8: np.ndarray) -> np.ndarray:
     return (gray9x8[:, 1:] > gray9x8[:, :-1]).flatten().astype(np.uint8)
 
 
-def fingerprint_video(path: str, frames: int = 3) -> Optional[np.ndarray]:
-    """抽取 frames 个均匀时间点帧（每帧 64bit dHash），拼接成视频指纹。
-    失败（无法探测/抽帧失败）返回 None。"""
-    try:
-        dur = probe_media(path)["duration"]
-    except Exception:
-        return None
-    if not dur or dur <= 0:
-        return None
+def extract_frame_hashes(path: str, frame_times: list[float]) -> list[np.ndarray]:
+    """按给定时间点抽帧（9x8 gray raw，每帧 64bit dHash），返回 dHash 列表。
+    独立函数：供指纹/查重/缩略图等复用（后期生成时落帧缓存也走这里）。"""
     tempdir = Path(tempfile.mkdtemp(prefix="sppj_fp_"))
     bits: list[np.ndarray] = []
     try:
-        for i in range(frames):
-            t = dur * (i + 1) / (frames + 1)
+        for i, t in enumerate(frame_times):
             raw = tempdir / f"f{i}.raw"
             args = [
                 _ffmpeg(), "-y",
@@ -1550,21 +1543,57 @@ def fingerprint_video(path: str, frames: int = 3) -> Optional[np.ndarray]:
                 bits.append(_frame_dhash(data))
     finally:
         shutil.rmtree(tempdir, ignore_errors=True)
+    return bits
+
+
+def fingerprint_video(path: str, frames: int = 3) -> Optional[np.ndarray]:
+    """抽取 frames 个均匀时间点帧（每帧 64bit dHash），拼接成视频指纹。
+    失败（无法探测/抽帧失败）返回 None。"""
+    try:
+        dur = probe_media(path)["duration"]
+    except Exception:
+        return None
+    if not dur or dur <= 0:
+        return None
+    times = [dur * (i + 1) / (frames + 1) for i in range(frames)]
+    bits = extract_frame_hashes(path, times)
     if not bits:
         return None
     return np.concatenate(bits)
 
 
+# 查重指纹进程内缓存：path -> (文件mtime, 指纹)。断点续跑/同批重复查重直接命中，不重复抽帧。
+_fp_cache: dict[str, tuple[float, Optional[np.ndarray]]] = {}
+_fp_cache_lock = threading.Lock()
+
+
+def _fingerprint_cached(path: str, frames: int = 2) -> Optional[np.ndarray]:
+    try:
+        mtime = os.stat(path).st_mtime
+    except OSError:
+        return None
+    with _fp_cache_lock:
+        hit = _fp_cache.get(path)
+        if hit and hit[0] == mtime:
+            return hit[1]
+    fp = fingerprint_video(path, frames=frames)
+    with _fp_cache_lock:
+        _fp_cache[path] = (mtime, fp)
+    return fp
+
+
 def find_similar_outputs(outputs: list[str], threshold: float = 0.88) -> list[dict]:
     """对输出文件两两比对感知哈希，返回疑似重复对 [{a, b, sim}]（按相似度降序）。
-    threshold=0.88 表示两文件指纹差异 <12%（画面高度一致才报疑似重复）。"""
+    threshold=0.88 表示两文件指纹差异 <12%（画面高度一致才报疑似重复）。
+    并发抽帧（最多 4 路）+ 进程内缓存，避免逐条串行启动 ffmpeg。"""
+    candidates = [p for p in outputs if p and os.path.isfile(p)]
     fps: dict[str, np.ndarray] = {}
-    for p in outputs:
-        if not p or not os.path.isfile(p):
-            continue
-        fp = fingerprint_video(p)
-        if fp is not None:
-            fps[p] = fp
+    if candidates:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(4, len(candidates))) as ex:
+            for p, fp in zip(candidates, ex.map(_fingerprint_cached, candidates)):
+                if fp is not None:
+                    fps[p] = fp
     paths = list(fps)
     pairs: list[dict] = []
     for i in range(len(paths)):
