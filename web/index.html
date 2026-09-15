@@ -115,7 +115,7 @@
                        :class="{ picked: fixed[zone.kind]===m.path, broken: !m.ok }"
                        @click="toggleFixed(zone.kind, m.path)">
                     <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
-                         :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl = ''">
+                         :src="m.thumbUrl" loading="lazy" decoding="async" :alt="m.name" @error="m.thumbUrl = ''">
                     <div v-else class="empty-thumb">🎬</div>
                     <div v-if="!m.ok" class="broken-badge">损坏</div>
                     <div v-if="m.dup" class="dup-badge">重复</div>
@@ -123,6 +123,12 @@
                     <div class="meta">
                       <div class="name" :title="m.name">{{ m.name }}</div>
                       <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
+                      <div class="vol-row" @click.stop title="素材音量（0~2倍）">
+                        <span class="vol-ico">🔊</span>
+                        <input class="vol-slider" type="range" min="0" max="2" step="0.05"
+                               :value="matVol(m.path)" @input="setMatVol(m.path, $event.target.value)">
+                        <span class="vol-val">{{ matVol(m.path).toFixed(2) }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -177,7 +183,7 @@
                          :class="{ picked: pool.items.includes(m.path), broken: !m.ok }"
                          @click="togglePoolItem(pool, m.path)">
                       <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
-                           :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl=''">
+                           :src="m.thumbUrl" loading="lazy" decoding="async" :alt="m.name" @error="m.thumbUrl=''">
                       <div v-else class="empty-thumb">🎬</div>
                       <div v-if="!m.ok" class="broken-badge">损坏</div>
                       <div v-if="m.dup" class="dup-badge">重复</div>
@@ -185,6 +191,12 @@
                       <div class="meta">
                         <div class="name" :title="m.name">{{ m.name }}</div>
                         <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
+                        <div class="vol-row" @click.stop title="素材音量（0~2倍）">
+                          <span class="vol-ico">🔊</span>
+                          <input class="vol-slider" type="range" min="0" max="2" step="0.05"
+                                 :value="matVol(m.path)" @input="setMatVol(m.path, $event.target.value)">
+                          <span class="vol-val">{{ matVol(m.path).toFixed(2) }}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -228,7 +240,7 @@
                        :class="{ picked: fixed['bgm']===m.path, broken: !m.ok }"
                        @click="toggleFixed('bgm', m.path)">
                     <img v-if="m.thumbUrl" class="thumb" :class="{land: m.landscape}"
-                         :src="m.thumbUrl" loading="lazy" :alt="m.name" @error="m.thumbUrl = ''">
+                         :src="m.thumbUrl" loading="lazy" decoding="async" :alt="m.name" @error="m.thumbUrl = ''">
                     <div v-else class="empty-thumb">🎬</div>
                     <div v-if="!m.ok" class="broken-badge">损坏</div>
                     <div v-if="m.dup" class="dup-badge">重复</div>
@@ -750,7 +762,10 @@
                   <button v-if="queue.length" class="btn danger" @click="clearQueue">清空队列</button>
                 </div>
                 <div v-if="queue.length" class="queue-list" style="margin-top:8px; display:flex; flex-direction:column; gap:6px">
-                  <div v-for="q in queue" :key="q.id" class="queue-item" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:8px">
+                  <div v-for="(q, qi) in queue" :key="q.id" class="queue-item" :class="{dragging: dragQueueIdx === qi}"
+                       draggable="true" @dragstart="dragQueueStart($event, qi)" @dragover.prevent @drop.prevent="dropQueueAt(qi)"
+                       style="display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:8px">
+                    <span class="drag-handle" title="拖拽排序">⠿</span>
                     <div style="flex:1; min-width:0">
                       <div style="font-weight:600">{{ q.label }}</div>
                       <div class="card-hint" style="font-size:12px">{{ q.payload.count || 0 }} 条 × {{ q.payload.dedupe_versions || 1 }} 版 · {{ q.payload.resolution || '-' }} · 去重{{ q.payload.dedupe_level === 'off' ? '关' : '开' }} · {{ q.payload.duration_mode || '-' }}</div>

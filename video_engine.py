@@ -77,12 +77,14 @@ def _file_fingerprint(path: str, extra: str = "") -> str:
 
 
 def _norm_cache_path(
-    src: str, width: int, height: int, has_audio: bool, normalize_audio: bool, fit_mode: str = "fit"
+    src: str, width: int, height: int, has_audio: bool, normalize_audio: bool, fit_mode: str = "fit",
+    volume: float = 1.0,
 ) -> Path:
     # normv2：音频处理加入 aresample=async=1:first_pts=0 强制音画对齐，旧缓存（normv1）作废
     # fit_mode：画面适配模式（fit/blur/crop），"fit"（黑边）省略后缀以复用历史缓存
     mode = "" if fit_mode == "fit" else f"|{fit_mode}"
-    key = _file_fingerprint(src, f"normv2|{width}x{height}|{has_audio}|{normalize_audio}{mode}")
+    vol = "" if abs(volume - 1.0) < 1e-6 else f"|v{volume:g}"
+    key = _file_fingerprint(src, f"normv2|{width}x{height}|{has_audio}|{normalize_audio}{mode}{vol}")
     folder = cache_dir() / "norm"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / f"{key}.mp4"
@@ -249,8 +251,9 @@ def normalize_clip(
     normalize_audio: bool = False,
     fit_mode: str = "fit",
     encode_accel: str = "auto",
+    volume: float = 1.0,
 ) -> None:
-    cached = _norm_cache_path(src, width, height, has_audio, normalize_audio, fit_mode)
+    cached = _norm_cache_path(src, width, height, has_audio, normalize_audio, fit_mode, volume)
     if cached.exists() and cached.stat().st_size > 0:
         shutil.copy2(cached, dst)
         if log:
@@ -286,6 +289,9 @@ def normalize_clip(
         af = "asetpts=PTS-STARTPTS,aresample=async=1:first_pts=0"
         if normalize_audio:
             af = f"loudnorm=I=-16:TP=-1.5:LRA=11,{af}"
+        if abs(volume - 1.0) >= 1e-6:
+            # 素材音量系数：放在归一化之后叠加，用户可在归一化基础上微调
+            af = f"volume={volume:g},{af}"
         args += ["-af", af]
     else:
         args += ["-map", "1:a:0"]
@@ -822,13 +828,22 @@ def apply_watermark(
     run_ffmpeg(args, cancel_event, pause_event, log)
 
 
+# 缩略图抽帧限流：素材库几百条缩略图并发请求时，同时最多 3 路 ffmpeg 抽帧
+_THUMB_LIMIT = threading.Semaphore(3)
+
+
 def get_thumbnail(path: str, max_width: int = 320) -> Optional[str]:
-    """抽取素材缩略图（带缓存），失败返回 None。"""
+    """抽取素材缩略图（带缓存），失败返回 None。
+    未命中缓存时并发抽帧限流（同时最多 3 路），避免素材库几百条缩略图同时请求时线程/内存爆炸。"""
     if not Path(path).exists():
         return None
     cached = _thumb_cache_path(path, max_width)
     if cached.exists() and cached.stat().st_size > 0:
         return str(cached)
+    with _THUMB_LIMIT:
+        return _render_thumbnail(path, max_width, cached)
+def _render_thumbnail(path: str, max_width: int, cached: Path) -> Optional[str]:
+    """实际抽帧渲染缩略图（调用方需已持有 _THUMB_LIMIT 额度）。"""
     info = probe_media(path)
     if not info.get("ok"):
         return None
@@ -914,6 +929,7 @@ class JobConfig:
     fixed_bgm: Optional[str] = None
     bgm_volume: float = 0.2
     audio_volume: float = 1.0
+    material_volumes: dict = field(default_factory=dict)  # 素材路径 -> 音量系数（≠1.0 时生效）
     normalize_audio: bool = False
     bgm_fade: bool = False
     bgm_ducking: bool = False
@@ -1284,10 +1300,12 @@ def _process_one_combo(
         normalize_clip(
             head, head_norm, width, height, head_info["duration"], head_info["has_audio"],
             cancel_event, pause_event, log, config.normalize_audio, config.fit_mode, encode_accel=config.encode_accel,
+            volume=float(config.material_volumes.get(head, 1.0)),
         )
         normalize_clip(
             tail, tail_norm, width, height, tail_info["duration"], tail_info["has_audio"],
             cancel_event, pause_event, log, config.normalize_audio, config.fit_mode, encode_accel=config.encode_accel,
+            volume=float(config.material_volumes.get(tail, 1.0)),
         )
 
         clips = [head_norm]
@@ -1301,6 +1319,7 @@ def _process_one_combo(
             normalize_clip(
                 middle, middle_norm, width, height, middle_info["duration"], middle_info["has_audio"],
                 cancel_event, pause_event, log, config.normalize_audio, config.fit_mode, encode_accel=config.encode_accel,
+                volume=float(config.material_volumes.get(middle, 1.0)),
             )
             clips.append(middle_norm)
             durations.append(probe_media(middle_norm)["duration"])

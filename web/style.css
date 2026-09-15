@@ -18,14 +18,14 @@
 
 :root[data-theme="dark"] {
   --bg: #0f1117;
-  --bg-soft: #151923;
-  --card: #1a1f2b;
-  --card-hover: #202636;
-  --line: #2a3142;
-  --line-strong: #3a4358;
-  --text: #e6e9f2;
-  --text-2: #a6adbf;
-  --text-3: #6b7387;
+  --bg-soft: #161a25;
+  --card: #1b2130;
+  --card-hover: #222940;
+  --line: #2d3648;
+  --line-strong: #414c66;
+  --text: #e8ebf4;
+  --text-2: #aab2c6;
+  --text-3: #7d869c;
   --accent: #4f7cff;
   --accent-hover: #6b90ff;
   --accent-soft: rgba(79, 124, 255, 0.14);
@@ -855,3 +855,15 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   font-size: 12.5px; color: var(--text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* 队列拖拽排序 */
+.drag-handle { cursor: grab; color: var(--text-dim, #8a94a6); user-select: none; font-size: 14px; padding: 0 2px; }
+.drag-handle:active { cursor: grabbing; }
+.queue-item { transition: opacity .15s, border-color .15s; }
+.queue-item.dragging { opacity: .45; border-color: var(--accent, #3b82f6); border-style: dashed; }
+
+/* 素材音量条 */
+.vol-row { display: flex; align-items: center; gap: 5px; margin-top: 4px; }
+.vol-ico { font-size: 11px; opacity: .75; }
+.vol-slider { flex: 1; min-width: 0; height: 3px; accent-color: var(--accent); cursor: pointer; }
+.vol-val { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); width: 26px; text-align: right; flex-shrink: 0; }

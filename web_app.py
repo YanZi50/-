@@ -466,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _send_file(self, path: Path, mime: str, as_attachment: str | None = None) -> None:
+    def _send_file(self, path: Path, mime: str, as_attachment: str | None = None, cache_seconds: int | None = None) -> None:
         if not path.exists() or not path.is_file():
             self.send_error(404, "not found")
             return
@@ -503,6 +503,9 @@ class Handler(BaseHTTPRequestHandler):
                 "Content-Disposition",
                 f'attachment; filename="{ascii_name}"',
             )
+        elif cache_seconds is not None:
+            # 不可变资源（缩略图等）：长缓存，避免页面刷新重复请求
+            self.send_header("Cache-Control", f"public, max-age={int(cache_seconds)}")
         else:
             self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -640,7 +643,7 @@ class Handler(BaseHTTPRequestHandler):
             if not thumb:
                 self.send_error(404, "no thumbnail")
                 return
-            self._send_file(Path(thumb), "image/jpeg")
+            self._send_file(Path(thumb), "image/jpeg", cache_seconds=86400)
             return
         if route == "/api/select_folder":
             name = (query.get("name") or ["head"])[0]
@@ -797,6 +800,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/queue/remove":
             self._queue_remove()
+        if route == "/api/queue/reorder":
+            self._queue_reorder()
             return
         if route == "/api/queue/clear":
             STATE.queue = []
@@ -954,6 +959,7 @@ class Handler(BaseHTTPRequestHandler):
             bgm_path=bgm_path,
             bgm_volume=_safe_float(payload.get("bgm_volume", 0.2), 0.2, 0.0, 2.0),
             audio_volume=_safe_float(payload.get("audio_volume", 1.0), 1.0, 0.0, 2.0),
+            material_volumes=dict(payload.get("material_volumes") or {}),
             bgm_folder=bgm_folder,
             fixed_bgm=fixed_bgm,
             normalize_audio=bool(payload.get("normalize_audio", False)),
@@ -1132,6 +1138,19 @@ class Handler(BaseHTTPRequestHandler):
         qid = payload.get("id")
         STATE.queue = [q for q in STATE.queue if q.get("id") != qid]
         self._send_json({"ok": True})
+
+    def _queue_reorder(self) -> None:
+        """按前端拖拽结果重排队列：ids 为新的顺序（id 列表）。"""
+        payload = self._read_json()
+        ids = payload.get("ids") or []
+        by_id = {q.get("id"): q for q in STATE.queue}
+        ordered = []
+        for qid in ids:
+            if qid in by_id:
+                ordered.append(by_id.pop(qid))
+        ordered.extend(by_id.values())  # 容错：未在 ids 中的排后面
+        STATE.queue = ordered
+        self._send_json({"ok": True, "queue_len": len(STATE.queue)})
 
     # ----------------------------------------------------------------
     # 开始前全局体检（素材健康 / 输出目录 / 磁盘空间 / 组合数 / FFmpeg）

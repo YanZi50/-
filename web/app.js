@@ -19,6 +19,7 @@ const state = reactive({
   deduping: false,    // 产物查重进行中（异步，后台比对中）
   simPage: 1,         // 疑似重复列表当前页（每页 5 条）
   queue: [],          // 待执行任务队列
+  dragQueueIdx: -1,   // 队列拖拽中的索引
   queueLabel: '',
   resultPage: 1,      // 生成结果当前页码（每页 5 条）
   taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
@@ -341,7 +342,31 @@ function collectConfig() {
     // 去重开关以后端判定为准：UI 状态由 dedupe_level 驱动，此处显式同步（避免默认 true 与 UI 不符）
     dedupe_enabled: state.params.dedupe_level !== 'off',
     bgm_folder: state.folders.bgm.trim(),
+    material_volumes: collectMatVolumes(),
   };
+}
+
+// 素材音量：localStorage 持久化（path -> 系数），仅收集 ≠1.0 的传给后端
+const VOL_KEY = 'sppj_matvol:';
+function matVol(path) {
+  const v = parseFloat(localStorage.getItem(VOL_KEY + path));
+  return Number.isFinite(v) ? Math.min(2, Math.max(0, v)) : 1.0;
+}
+function setMatVol(path, v) {
+  const val = parseFloat(v);
+  const clamped = Number.isFinite(val) ? Math.min(2, Math.max(0, val)) : 1.0;
+  localStorage.setItem(VOL_KEY + path, String(clamped));
+}
+function collectMatVolumes() {
+  const vols = {};
+  const all = [];
+  ['head', 'tail', 'bgm'].forEach((k) => all.push(...(state.materials[k] || [])));
+  (state.middlePools || []).forEach((p) => all.push(...(p.files || [])));
+  for (const m of all) {
+    const v = matVol(m.path);
+    if (Math.abs(v - 1.0) >= 1e-6) vols[m.path] = v;
+  }
+  return vols;
 }
 
 function applyConfig(cfg, restoreFixed = true, restorePaths = true) {
@@ -984,6 +1009,22 @@ async function removeFromQueue(id) {
   loadQueue();
 }
 
+// 队列拖拽排序
+function dragQueueStart(e, idx) {
+  state.dragQueueIdx = idx;
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+}
+async function dropQueueAt(idx) {
+  const from = state.dragQueueIdx;
+  state.dragQueueIdx = -1;
+  if (from == null || from === idx) return;
+  const ids = state.queue.map((q) => q.id);
+  const [moved] = ids.splice(from, 1);
+  ids.splice(idx, 0, moved);
+  const r = await api('/api/queue/reorder', { ids });
+  if (r && r.ok) loadQueue();
+}
+
 async function clearQueue() {
   await api('/api/queue/clear', {});
   showMsg('队列已清空', 'info');
@@ -1079,6 +1120,7 @@ createApp({
       selectAllTransitions, clearTransitions, setTransitionDuration,
       selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,
+      matVol, setMatVol,
       selectPoolFolder, addMiddlePool, removeMiddlePool, scanPool,
       togglePoolItem, poolOrder, togglePoolExpand,
       toggleExpand, expandAll, collapseAll,
@@ -1093,7 +1135,7 @@ createApp({
       visibleRows, resultPageCount, goResultPage,
       visibleSimilar, simPageCount, goSimPage,
       deepDedupeOptions, deepStrengths,
-      addToQueue, removeFromQueue, clearQueue, exportCsv,
+      addToQueue, removeFromQueue, clearQueue, dragQueueStart, dropQueueAt, exportCsv,
     };
   },
 }).mount('#app');
