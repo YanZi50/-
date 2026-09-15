@@ -400,24 +400,27 @@ function applyConfig(cfg, restoreFixed = true, restorePaths = true) {
     state.middlePools = [{ id: 1, folder: restorePaths ? (cfg.middle_folder || '') : '', items: legacyItems, count: legacyCount, files: [], expanded: false, search: '', shown: 24 }];
   }
   const p = state.params;
+  // 枚举白名单兜底：历史坏配置（如 GBK 写入的 '???'）加载即纠正，非法值回退默认，避免界面/生成用坏值
+  const pick = (v, allowed, def) => (allowed.includes(v) ? v : def);
   p.count = cfg.count ?? 10;
   p.workers = cfg.workers ?? 2;
-  p.encode_accel = cfg.encode_accel || 'auto';
+  p.encode_accel = pick(cfg.encode_accel || 'auto', ['auto', 'nvenc', 'cpu'], 'auto');
   p.resolution = cfg.resolution || '1080x1920';
-  p.duration_mode = cfg.duration_mode || '不限制';
+  p.duration_mode = pick(cfg.duration_mode || '不限制', ['不限制', '15s', '25s', '30s'], '不限制');
+  p.fit_mode = pick(cfg.fit_mode || 'fit', ['fit', 'blur', 'crop'], 'fit');
   // 模板恢复校验：含破坏标记（?，Windows 非法文件名字符，坏配置特征）时回退默认，避免生成 output_{__}_{__}_{__} 这类坏名
   const tpl = cfg.output_name_template || 'output_{序号}_{开头}_{结尾}';
   p.output_name_template = tpl.includes('?') ? 'output_{序号}_{开头}_{结尾}' : tpl;
   p.dedupe_enabled = cfg.dedupe_enabled !== false;
-  p.dedupe_level = cfg.dedupe_level || 'off';
+  p.dedupe_level = pick(cfg.dedupe_level || 'off', ['off', 'light', 'deep'], 'off');
   p.dedupe_options = Object.assign({ visual: true, segment: true, audio: true, speed: false, mirror: false, noise: false, pitch: false, deep_strength: 'medium' }, cfg.dedupe_options || {});
   p.dedupe_versions = Math.max(1, Math.min(5, cfg.dedupe_versions || 1));
   p.random_seed = cfg.random_seed || 20260905;
-  p.transition_mode = restorePaths ? (cfg.transition_mode || '不使用') : '不使用';  // 启动默认不使用，历史/模板载入才恢复
+  p.transition_mode = restorePaths ? pick(cfg.transition_mode || '不使用', ['不使用', '固定', '随机'], '不使用') : '不使用';  // 启动默认不使用，历史/模板载入才恢复
   p.transition_type = cfg.transition_type || 'fade';
   p.transition_duration = cfg.transition_duration || 0.5;
   p.transition_types = cfg.transition_types?.length ? cfg.transition_types : transitionOptions.map((t) => t.value);
-  p.bgm_mode = restorePaths ? (cfg.bgm_mode || '不使用') : '不使用';  // 启动默认不使用，历史/模板载入才恢复
+  p.bgm_mode = restorePaths ? pick(cfg.bgm_mode || '不使用', ['不使用', '音乐文件夹随机', '音乐文件夹固定'], '不使用') : '不使用';  // 启动默认不使用，历史/模板载入才恢复
   p.bgm_volume = cfg.bgm_volume ?? 0.2;
   p.audio_volume = cfg.audio_volume ?? 1.0;
   p.bgm_fade = !!cfg.bgm_fade;
@@ -425,8 +428,8 @@ function applyConfig(cfg, restoreFixed = true, restorePaths = true) {
   p.fixed_bgm = cfg.fixed_bgm || '';
   p.use_watermark = !!cfg.use_watermark;
   p.watermark_path = cfg.watermark_path || '';
-  p.watermark_mode = cfg.watermark_mode || '铺满全屏';
-  p.watermark_position = cfg.watermark_position || '右下角';
+  p.watermark_mode = pick(cfg.watermark_mode || '铺满全屏', ['铺满全屏', '角落水印'], '铺满全屏');
+  p.watermark_position = pick(cfg.watermark_position || '右下角', ['右下角', '右上角', '左下角', '左上角'], '右下角');
   p.watermark_scale = cfg.watermark_scale ?? 0.15;
   p.watermark_opacity = cfg.watermark_opacity ?? 0.6;
   p.normalize_audio = !!cfg.normalize_audio;

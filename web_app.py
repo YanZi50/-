@@ -427,6 +427,11 @@ def _safe_int(value, default: int, lo: int | None = None, hi: int | None = None)
     return v
 
 
+def _safe_choice(value, allowed, default):
+    """枚举白名单兜底：坏配置（GBK 写入的 '???' 等）回退默认，避免坏值进入生成流程。"""
+    return value if value in allowed else default
+
+
 def _run_dedupe_async(out_paths: list[str]) -> None:
     """后台查重：生成完成后静默比对产物相似度，完成后推送结果与日志。
     注意：线程内已在 STATE.lock 保护下直接操作 logs（不能再调 add_log 嵌套加锁，会死锁）。"""
@@ -893,7 +898,7 @@ class Handler(BaseHTTPRequestHandler):
         if use_watermark and not watermark_path:
             return "已勾选水印，请填写水印图片路径"
 
-        bgm_mode = str(payload.get("bgm_mode", "不使用"))
+        bgm_mode = _safe_choice(str(payload.get("bgm_mode", "不使用")), {"不使用", "本地导入", "音乐文件夹固定", "音乐文件夹随机"}, "不使用")
         bgm_path = str(payload.get("bgm_path", "")).strip()
         bgm_folder = str(payload.get("bgm_folder", "")).strip()
         fixed_bgm = str(payload.get("fixed_bgm") or "").strip() or None
@@ -947,11 +952,11 @@ class Handler(BaseHTTPRequestHandler):
             output_folder=output_folder,
             count=count,
             resolution=str(payload.get("resolution", "1080x1920")),
-            duration_mode=str(payload.get("duration_mode", "不限制")),
+            duration_mode=_safe_choice(str(payload.get("duration_mode", "不限制")), {"不限制", "15s", "25s", "30s"}, "不限制"),
             use_watermark=use_watermark,
             watermark_path=watermark_path,
             use_transition=bool(payload.get("use_transition", False)),
-            transition_mode=str(payload.get("transition_mode", "不使用")),
+            transition_mode=_safe_choice(str(payload.get("transition_mode", "不使用")), {"不使用", "固定", "随机"}, "不使用"),
             transition_type=str(payload.get("transition_type", "fade")),
             transition_duration=_safe_float(payload.get("transition_duration", 0.5), 0.5, 0.1, 2.0),
             transition_types=[str(x) for x in payload.get("transition_types", [])],
@@ -963,12 +968,12 @@ class Handler(BaseHTTPRequestHandler):
             bgm_folder=bgm_folder,
             fixed_bgm=fixed_bgm,
             normalize_audio=bool(payload.get("normalize_audio", False)),
-            dedupe_level=str(payload.get("dedupe_level") or "off"),
+            dedupe_level=_safe_choice(str(payload.get("dedupe_level") or "off"), {"off", "light", "deep"}, "off"),
             dedupe_options=dict(payload.get("dedupe_options") or {"visual": True, "segment": True, "audio": True}),
             dedupe_versions=max(1, min(5, int(payload.get("dedupe_versions") or 1))),
             bgm_fade=bool(payload.get("bgm_fade", False)),
             bgm_ducking=bool(payload.get("bgm_ducking", False)),
-            fit_mode=str(payload.get("fit_mode", "fit")),
+            fit_mode=_safe_choice(str(payload.get("fit_mode", "fit")), {"fit", "blur", "crop"}, "fit"),
             output_name_template=str(payload.get("output_name_template", "output_{序号}_{开头}_{结尾}")),
             random_seed=_safe_int(payload.get("random_seed", 20260905), 20260905),
             dedupe_enabled=bool(payload.get("dedupe_enabled", True)),
@@ -978,12 +983,12 @@ class Handler(BaseHTTPRequestHandler):
             middle_count=middle_count,
             middle_pools=middle_pools,
             use_subtitle=use_subtitle,
-            watermark_mode=str(payload.get("watermark_mode", "铺满全屏")),
-            watermark_position=str(payload.get("watermark_position", "右下角")),
+            watermark_mode=_safe_choice(str(payload.get("watermark_mode", "铺满全屏")), {"铺满全屏", "角落水印"}, "铺满全屏"),
+            watermark_position=_safe_choice(str(payload.get("watermark_position", "右下角")), {"右下角", "右上角", "左下角", "左上角"}, "右下角"),
             watermark_scale=_safe_float(payload.get("watermark_scale", 0.15), 0.15, 0.05, 0.6),
             watermark_opacity=_safe_float(payload.get("watermark_opacity", 0.6), 0.6, 0.05, 1.0),
             workers=_safe_int(payload.get("workers", 2), 2, 1, 8),
-            encode_accel=str(payload.get("encode_accel") or "auto"),
+            encode_accel=_safe_choice(str(payload.get("encode_accel") or "auto"), {"auto", "nvenc", "cpu"}, "auto"),
         )
 
     def _run_task(self, config: JobConfig, label: str, mode: str, failed_items: list[dict] | None = None,
