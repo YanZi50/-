@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import json
 import math
 import os
 import random
@@ -1562,12 +1564,71 @@ def fingerprint_video(path: str, frames: int = 3) -> Optional[np.ndarray]:
     return np.concatenate(bits)
 
 
+def _frame_cache_path(src: str) -> Path:
+    key = _file_fingerprint(src, "frames")
+    folder = cache_dir() / "frames"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{key}.json"
+
+
+def save_frame_cache(src: str, frames: int = 2) -> Optional[Path]:
+    """抽帧并存盘（供查重/未来复用）。返回缓存路径，失败返回 None。
+    文件变化（size/mtime）时指纹键自动变化，旧缓存自然失效。"""
+    try:
+        dur = probe_media(src)["duration"]
+    except Exception:
+        return None
+    if not dur or dur <= 0:
+        return None
+    times = [dur * (i + 1) / (frames + 1) for i in range(frames)]
+    bits = extract_frame_hashes(src, times)
+    if not bits:
+        return None
+    arr = np.concatenate(bits)  # frames*8 字节（每帧 64bit dHash）
+    payload = base64.b64encode(arr.tobytes()).decode("ascii")
+    p = _frame_cache_path(src)
+    p.write_text(json.dumps({"frames": frames, "b64": payload}), encoding="utf-8")
+    return p
+
+
+def load_frame_cache(src: str) -> Optional[np.ndarray]:
+    """读帧缓存（未命中/损坏返回 None）。文件变化后键不同，自动视为未命中。"""
+    p = _frame_cache_path(src)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        arr = np.frombuffer(base64.b64decode(data["b64"]), dtype=np.uint8)
+        return arr.reshape(-1)
+    except Exception:
+        return None
+
+
+def _cleanup_frame_cache(max_age_days: int = 7) -> None:
+    """低频清理孤儿帧缓存：仅清理超过 N 天未更新的帧文件（产物早已删除/更替）。"""
+    try:
+        folder = cache_dir() / "frames"
+        if not folder.exists():
+            return
+        cutoff = time.time() - max_age_days * 86400
+        for p in folder.glob("*.json"):
+            try:
+                if p.stat().st_mtime < cutoff:
+                    p.unlink(missing_ok=True)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
 # 查重指纹进程内缓存：path -> (文件mtime, 指纹)。断点续跑/同批重复查重直接命中，不重复抽帧。
 _fp_cache: dict[str, tuple[float, Optional[np.ndarray]]] = {}
 _fp_cache_lock = threading.Lock()
+_last_fp_cleanup: float = 0.0
 
 
 def _fingerprint_cached(path: str, frames: int = 2) -> Optional[np.ndarray]:
+    global _last_fp_cleanup
     try:
         mtime = os.stat(path).st_mtime
     except OSError:
@@ -1576,9 +1637,21 @@ def _fingerprint_cached(path: str, frames: int = 2) -> Optional[np.ndarray]:
         hit = _fp_cache.get(path)
         if hit and hit[0] == mtime:
             return hit[1]
-    fp = fingerprint_video(path, frames=frames)
+    # 落盘缓存优先（服务重启后仍命中，零 ffmpeg 启动）
+    fp = load_frame_cache(path)
+    if fp is None:
+        fp = fingerprint_video(path, frames=frames)
+        if fp is not None:
+            try:
+                save_frame_cache(path, frames=frames)
+            except Exception:
+                pass
     with _fp_cache_lock:
         _fp_cache[path] = (mtime, fp)
+    # 低频清理孤儿帧缓存（每天最多一次）
+    if time.time() - _last_fp_cleanup > 86400:
+        _last_fp_cleanup = time.time()
+        _cleanup_frame_cache()
     return fp
 
 
