@@ -383,11 +383,11 @@ function applyConfig(cfg, restoreFixed = true, restorePaths = true) {
   p.dedupe_options = Object.assign({ visual: true, segment: true, audio: true, speed: false, mirror: false, noise: false, pitch: false, deep_strength: 'medium' }, cfg.dedupe_options || {});
   p.dedupe_versions = Math.max(1, Math.min(5, cfg.dedupe_versions || 1));
   p.random_seed = cfg.random_seed || 20260905;
-  p.transition_mode = cfg.transition_mode || '不使用';
+  p.transition_mode = restorePaths ? (cfg.transition_mode || '不使用') : '不使用';  // 启动默认不使用，历史/模板载入才恢复
   p.transition_type = cfg.transition_type || 'fade';
   p.transition_duration = cfg.transition_duration || 0.5;
   p.transition_types = cfg.transition_types?.length ? cfg.transition_types : transitionOptions.map((t) => t.value);
-  p.bgm_mode = cfg.bgm_mode || '不使用';
+  p.bgm_mode = restorePaths ? (cfg.bgm_mode || '不使用') : '不使用';  // 启动默认不使用，历史/模板载入才恢复
   p.bgm_volume = cfg.bgm_volume ?? 0.2;
   p.audio_volume = cfg.audio_volume ?? 1.0;
   p.bgm_fade = !!cfg.bgm_fade;
