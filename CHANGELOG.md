@@ -3,6 +3,11 @@
 > 每次 Git 提交都必须在本文档顶部新增对应说明，内容至少包含：
 > 更新了什么、改动了什么、作用是什么、修复了什么、优化了什么。
 
+## 2026-09-15（R81：更新下载走系统代理——国内网络访问 GitHub 必选修复）
+
+- **问题**：程序内更新下载用 urllib 直连 GitHub，未走系统代理。本机（Clash 127.0.0.1:7897）gh CLI 直连 OAuth 端点即超时，程序下载同样会失败——B 方案在这类网络下不可用。
+- **修复**：新增 _system_proxy()（读注册表 ProxyEnable/ProxyServer）+ _url_opener()（带代理的 opener），更新检查（GitHub Releases API / version.txt）与更新包下载全部走系统代理；无代理环境自动直连，不影响正常网络。
+- **验证**：端到端全链路真实跑通——模拟旧版本 → 检测到更新（has_update=True, download_url 指向新资产）→ 后台下载 78.8MB（走代理）→ 解压完整（exe/ffmpeg/依赖/README 齐全）→ 状态 ready。清理临时文件后恢复 version.txt。
 ## 2026-09-15（R80：版本更新机制 B 方案——程序内下载 + 一键替换，不再跳网页）
 
 - **更新检查升级**：优先读取 GitHub Releases 最新版本（tag=版本号，zip 资产即更新包）；仓库暂无 Release 时自动回退 version.txt 对比（仅提示、无下载按钮）。

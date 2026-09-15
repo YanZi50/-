@@ -1453,6 +1453,30 @@ def _read_local_version() -> str:
     return "dev"
 
 
+def _system_proxy() -> dict | None:
+    """读取 Windows 系统代理（注册表 ProxyEnable/ProxyServer），返回 ProxyHandler 参数。
+    国内网络访问 GitHub 常需走代理，urllib 不自动读系统代理，这里显式接管；无代理返回 None（直连）。"""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") as key:
+            enable, _ = winreg.QueryValueEx(key, "ProxyEnable")
+            server, _ = winreg.QueryValueEx(key, "ProxyServer")
+        if enable and server:
+            server = str(server).strip()
+            if server:
+                return {"http": "http://" + server, "https": "http://" + server}
+    except Exception:
+        pass
+    return None
+
+
+def _url_opener() -> urllib.request.OpenerDirector:
+    proxy = _system_proxy()
+    if proxy:
+        return urllib.request.build_opener(urllib.request.ProxyHandler(proxy))
+    return urllib.request.build_opener()
+
+
 def _fetch_update_info() -> dict:
     """读取 GitHub 远端版本信息（方案 B：半自动更新）：
     优先查最新 Release（tag=版本号，zip 资产 → 可下载），失败回退 version.txt（仅提示无下载）。"""
@@ -1468,7 +1492,7 @@ def _fetch_update_info() -> dict:
             "https://api.github.com/repos/YanZi50/-/releases/latest",
             headers={"User-Agent": "sppj-update-check/1.0", "Accept": "application/vnd.github+json"},
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with _url_opener().open(req, timeout=10) as resp:
             rel = json.loads(resp.read().decode("utf-8"))
         tag = str(rel.get("tag_name") or "").strip()[:32]
         if tag:
@@ -1494,7 +1518,7 @@ def _fetch_update_info() -> dict:
         ):
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "sppj-update-check/1.0"})
-                with urllib.request.urlopen(req, timeout=6) as resp:
+                with _url_opener().open(req, timeout=8) as resp:
                     data = resp.read()
                 if url.startswith("https://api.github.com"):
                     obj = json.loads(data.decode("utf-8"))
@@ -1546,7 +1570,7 @@ def _download_update_async(download_url: str) -> None:
             zip_path = dl_dir / "sppj_update.zip"
             # 流式下载（带进度）
             req = urllib.request.Request(download_url, headers={"User-Agent": "sppj-update-check/1.0"})
-            with urllib.request.urlopen(req, timeout=30) as resp, zip_path.open("wb") as f:
+            with _url_opener().open(req, timeout=60) as resp, zip_path.open("wb") as f:
                 total = int(resp.headers.get("Content-Length") or 0)
                 STATE.update_download = {"stage": "downloading", "done": 0, "total": total, "error": None}
                 done = 0
