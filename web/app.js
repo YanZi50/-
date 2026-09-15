@@ -20,6 +20,7 @@ const state = reactive({
   simPage: 1,         // 疑似重复列表当前页（每页 5 条）
   queue: [],          // 待执行任务队列
   dragQueueIdx: -1,   // 队列拖拽中的索引
+  matVols: {},        // 素材音量响应式 map（path -> 系数）
   queueLabel: '',
   resultPage: 1,      // 生成结果当前页码（每页 5 条）
   taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
@@ -346,15 +347,18 @@ function collectConfig() {
   };
 }
 
-// 素材音量：localStorage 持久化（path -> 系数），仅收集 ≠1.0 的传给后端
+// 素材音量：响应式 map（实时显示）+ localStorage 持久化；仅收集 ≠1.0 的传给后端
 const VOL_KEY = 'sppj_matvol:';
 function matVol(path) {
+  const fromState = state.matVols[path];
+  if (fromState != null) return fromState;
   const v = parseFloat(localStorage.getItem(VOL_KEY + path));
   return Number.isFinite(v) ? Math.min(2, Math.max(0, v)) : 1.0;
 }
 function setMatVol(path, v) {
   const val = parseFloat(v);
   const clamped = Number.isFinite(val) ? Math.min(2, Math.max(0, val)) : 1.0;
+  state.matVols[path] = clamped;   // 响应式更新滑块数值显示
   localStorage.setItem(VOL_KEY + path, String(clamped));
 }
 function collectMatVolumes() {

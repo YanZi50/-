@@ -123,10 +123,11 @@
                     <div class="meta">
                       <div class="name" :title="m.name">{{ m.name }}</div>
                       <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
-                      <div class="vol-row" @click.stop title="素材音量（0~2倍）">
+                      <div class="vol-row" @click.stop title="素材音量（0~2倍），双击恢复默认 1.00">
                         <span class="vol-ico">🔊</span>
                         <input class="vol-slider" type="range" min="0" max="2" step="0.05"
-                               :value="matVol(m.path)" @input="setMatVol(m.path, $event.target.value)">
+                               :value="matVol(m.path)" @input="setMatVol(m.path, $event.target.value)"
+                               @dblclick.stop="setMatVol(m.path, 1)">
                         <span class="vol-val">{{ matVol(m.path).toFixed(2) }}</span>
                       </div>
                     </div>
@@ -191,10 +192,11 @@
                       <div class="meta">
                         <div class="name" :title="m.name">{{ m.name }}</div>
                         <div class="sub">{{ m.durationText }}<template v-if="m.resText"> · {{ m.resText }}</template></div>
-                        <div class="vol-row" @click.stop title="素材音量（0~2倍）">
+                        <div class="vol-row" @click.stop title="素材音量（0~2倍），双击恢复默认 1.00">
                           <span class="vol-ico">🔊</span>
                           <input class="vol-slider" type="range" min="0" max="2" step="0.05"
-                                 :value="matVol(m.path)" @input="setMatVol(m.path, $event.target.value)">
+                                 :value="matVol(m.path)" @input="setMatVol(m.path, $event.target.value)"
+                                 @dblclick.stop="setMatVol(m.path, 1)">
                           <span class="vol-val">{{ matVol(m.path).toFixed(2) }}</span>
                         </div>
                       </div>

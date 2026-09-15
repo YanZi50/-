@@ -986,7 +986,8 @@ class Handler(BaseHTTPRequestHandler):
             encode_accel=str(payload.get("encode_accel") or "auto"),
         )
 
-    def _run_task(self, config: JobConfig, label: str, mode: str, failed_items: list[dict] | None = None) -> None:
+    def _run_task(self, config: JobConfig, label: str, mode: str, failed_items: list[dict] | None = None,
+                  skip_existing: bool = True) -> None:
         STATE.cancel_event.clear()
         STATE.pause_event.clear()
         STATE.last_config = config
@@ -1026,6 +1027,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     result = process_batch(
                         cfg, STATE.cancel_event, STATE.pause_event, log=log, progress=progress,
+                        skip_existing=skip_existing,
                     )
                 STATE.result = result
                 STATE.last_failed_items = list(result.failed_items)
@@ -1353,8 +1355,15 @@ class Handler(BaseHTTPRequestHandler):
         config.count = 1
         config.output_folder = str(PREVIEW_DIR)
         config.output_name_template = "preview_{序号}_{开头}_{结尾}"
+        # 预览语义 = 按当前配置生成 1 条看效果：清空旧预览文件（不堆积、不跳过、始终全新生成）
+        try:
+            for old in PREVIEW_DIR.glob("*"):
+                if old.is_file():
+                    old.unlink(missing_ok=True)
+        except Exception:
+            pass
         register_allowed_dir(str(PREVIEW_DIR))
-        self._run_task(config, "预览", "preview")
+        self._run_task(config, "预览", "preview", skip_existing=False)
         self._send_json({"ok": True})
 
     def _retry_failed(self) -> None:
