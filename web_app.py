@@ -1453,6 +1453,25 @@ def _read_local_version() -> str:
     return "dev"
 
 
+def _parse_version(v: str) -> tuple:
+    """解析语义化版本号 vX.Y.Z → (X, Y, Z)；解析失败（如旧版 hash）返回 (0,0,0) 视为最低。"""
+    s = str(v or "").strip().lower().lstrip("v")
+    nums = []
+    for part in re.split(r"[._\-]", s)[:3]:
+        if part.isdigit():
+            nums.append(int(part))
+        else:
+            break
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums[:3])
+
+
+def _is_newer(remote: str, local: str) -> bool:
+    """远端版本是否高于本地（按数字比较，防 v1.10.0 被字符串误判小于 v1.9.9）。"""
+    return _parse_version(remote) > _parse_version(local)
+
+
 def _system_proxy() -> dict | None:
     """读取 Windows 系统代理（注册表 ProxyEnable/ProxyServer），返回 ProxyHandler 参数。
     国内网络访问 GitHub 常需走代理，urllib 不自动读系统代理，这里显式接管；无代理返回 None（直连）。"""
@@ -1502,7 +1521,7 @@ def _fetch_update_info() -> dict:
                     url = str(asset.get("browser_download_url") or "")
                     break
             base["latest"] = tag
-            base["has_update"] = bool(local and tag != local)
+            base["has_update"] = bool(local and _is_newer(tag, local))
             base["download_url"] = url or None
             base["has_release"] = True
             base["release_url"] = str(rel.get("html_url") or "https://github.com/YanZi50/-/releases")
@@ -1528,7 +1547,7 @@ def _fetch_update_info() -> dict:
                 remote = raw.strip()[:32] or None
                 if remote:
                     base["latest"] = remote
-                    base["has_update"] = bool(local and remote != local)
+                    base["has_update"] = bool(local and remote and _is_newer(remote, local))
                 break
             except Exception:
                 continue
