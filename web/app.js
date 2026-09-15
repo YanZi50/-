@@ -27,6 +27,9 @@ const state = reactive({
   taskSnapshot: null,   // 本次/上次任务的参数快照（生成中改动参数不影响任务，快照用于核对）
   snapOpen: false,
   updateInfo: null,     // 版本更新检查结果（null=未查到，静默）
+  updateDownload: null, // 更新包下载状态 {stage, done, total, error}
+  updateReadyShown: false, // 下载就绪提示是否已弹（避免轮询重复弹窗）
+  portable: false,   // 是否便携版（决定更新提示文案）
   folders: { head: '', tail: '', middle: '', bgm: '', output: '' },
   materials: { head: [], tail: [], middle: [], bgm: [] },
   fixed: { head: '', tail: '', middle: '', bgm: '' },
@@ -98,6 +101,31 @@ function showMsg(text, type = 'info') {
   state.msg = { text, type };
   clearTimeout(state.msg.timer);
   state.msg.timer = setTimeout(() => { state.msg.text = ''; }, 6000);
+}
+
+/* ---------- 版本更新（方案 B：半自动——程序内下载 → 一键替换脚本） ---------- */
+async function downloadUpdate() {
+  try {
+    const data = await api('/api/update/download', { method: 'POST' });
+    if (!data.ok) {
+      showMsg(data.error || '下载启动失败', 'error');
+      return;
+    }
+    state.updateReadyShown = false;
+    showMsg('开始下载更新包（后台下载中，可继续使用）…', 'info');
+  } catch (e) {
+    showMsg('下载启动失败：' + (e.message || e), 'error');
+  }
+}
+function updateReadyTip() {
+  if (state.portable) {
+    showMsg('更新包已就绪！请关闭程序，双击程序目录下《一键替换更新.bat》自动完成替换重启', 'success');
+  } else {
+    showMsg('更新包已下载完成（开发版请用 git pull 更新）', 'success');
+  }
+}
+function updateFailedTip(err) {
+  showMsg('更新下载失败：' + (err || '网络异常，可到 GitHub Releases 手动下载'), 'error');
 }
 
 /* ---------- 页面标题 ---------- */
@@ -951,6 +979,17 @@ async function poll() {
     }
     state.deduping = !!s.deduping;
     state.dedupProgress = s.dedup_progress || null;
+    state.portable = !!s.portable;
+    // 更新下载状态
+    if (s.update_download) {
+      const wasReady = state.updateDownload && state.updateDownload.stage === 'ready';
+      state.updateDownload = s.update_download;
+      if (s.update_download.stage === 'ready' && !wasReady && !state.updateReadyShown) {
+        state.updateReadyShown = true;
+        updateReadyTip();
+      }
+      if (s.update_download.stage === 'failed' && !wasReady) updateFailedTip(s.update_download.error);
+    }
     // 版本更新检查（失败静默，不打扰）
     if (!state.updateInfo) {
       try {
@@ -1161,6 +1200,7 @@ createApp({
       yieldTotal, dedupeOn, dedupeLevelLabel, warnIfRunning, snapRows, maxCombos, setCount,
       progressPct, logHtml, poolPickedCount, resultRows, warnsText,
       toggleTheme, toggleChip, randomizeSeed, shutdownApp,
+      downloadUpdate,
       selectAllTransitions, clearTransitions, setTransitionDuration,
       selectFolder, pickWatermark,
       scan, toggleFixed, fileName, shortError, fmtEta, makeDownloadUrl,

@@ -178,6 +178,16 @@ body::before {
   border-radius: 999px; text-decoration: none; cursor: pointer;
 }
 .update-hint:hover { filter: brightness(1.15); }
+.mini-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; padding: 4px 10px; border-radius: 6px;
+  background: var(--card); border: 1px solid var(--line); color: var(--text-2);
+  cursor: pointer; text-decoration: none; transition: all var(--speed);
+}
+.mini-btn:hover { border-color: var(--line-strong); color: var(--text); }
+.mini-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mini-btn.primary:hover { filter: brightness(1.1); }
+.mini-btn.primary:disabled { opacity: .55; cursor: not-allowed; filter: none; }
 
 /* ---------- 顶部 ---------- */
 .topbar {

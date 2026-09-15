@@ -19,6 +19,7 @@ import threading
 import time
 import zipfile
 import base64
+import urllib.request
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -213,6 +214,7 @@ class AppState:
         self.queue: list[dict] = []          # 待执行队列 [{id, label, payload}]
         self.queue_seq: int = 0
         self.update_info: dict | None = None  # 版本更新检查结果（失败保持 None，静默）
+        self.update_download: dict | None = None  # 更新包下载状态 {"stage","done","total","error"}（None=未下载）
 
     def add_log(self, message: str) -> None:
         with self.lock:
@@ -283,6 +285,8 @@ class AppState:
                 "cancelled": self.result.cancelled if self.result else False,
                 "deduping": self.deduping,
                 "dedup_progress": self.dedup_progress,
+                "update_download": self.update_download,
+                "portable": bool(getattr(sys, "frozen", False)),
                 "failed_items": self.result.failed_items if self.result else [],
                 "success_items": _with_sizes(self.result.success_items) if self.result else [],
                 "error": self.error,
@@ -601,7 +605,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True})
             return
         if route == "/api/update":
-            self._send_json(STATE.update_info or {"has_update": False})
+            info = dict(STATE.update_info or {})  # 副本，避免污染缓存
+            # 附带下载状态，前端一次拿到
+            info["download"] = STATE.update_download
+            self._send_json(info)
             return
         if route == "/api/similar":
             self._send_json({"ok": True, "pairs": STATE.similar_pairs})
@@ -716,6 +723,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         parsed = urlparse(self.path)
         route = parsed.path
+        if route == "/api/update/download":
+            info = STATE.update_info or {}
+            url = info.get("download_url")
+            if STATE.running:
+                self._send_json({"ok": False, "error": "任务运行中，请生成结束后再更新"})
+                return
+            if STATE.update_download and STATE.update_download.get("stage") in ("downloading", "ready"):
+                self._send_json({"ok": False, "error": "更新已在下载/已就绪"})
+                return
+            if not url:
+                self._send_json({"ok": False, "error": "暂无可用更新包（请到 GitHub Releases 手动下载）"})
+                return
+            _download_update_async(url)
+            self._send_json({"ok": True})
+            return
         if route == "/api/templates/save":
             payload = self._read_json()
             name = str(payload.get("name", "")).strip()
@@ -1431,30 +1453,64 @@ def _read_local_version() -> str:
     return "dev"
 
 
-def _fetch_remote_version() -> str | None:
-    """读取 GitHub 远端版本号。优先 contents API（无 CDN 延迟），失败回退 raw。"""
-    import base64
+def _fetch_update_info() -> dict:
+    """读取 GitHub 远端版本信息（方案 B：半自动更新）：
+    优先查最新 Release（tag=版本号，zip 资产 → 可下载），失败回退 version.txt（仅提示无下载）。"""
     import json
     import urllib.request
 
-    urls = [
-        "https://api.github.com/repos/YanZi50/-/contents/version.txt",
-        "https://raw.githubusercontent.com/YanZi50/-/master/version.txt",
-    ]
-    for url in urls:
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "sppj-update-check/1.0"})
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                data = resp.read()
-            if url.startswith("https://api.github.com"):
-                obj = json.loads(data.decode("utf-8"))
-                raw = base64.b64decode(obj.get("content") or "").decode("utf-8-sig")
-            else:
-                raw = data.decode("utf-8-sig")
-            return raw.strip()[:32] or None
-        except Exception:
-            continue
-    return None
+    local = _read_local_version()
+    base = {"current": local, "latest": local, "has_update": False,
+            "url": "https://github.com/YanZi50/-", "download_url": None, "has_release": False}
+    # 1) GitHub Releases API
+    try:
+        req = urllib.request.Request(
+            "https://api.github.com/repos/YanZi50/-/releases/latest",
+            headers={"User-Agent": "sppj-update-check/1.0", "Accept": "application/vnd.github+json"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            rel = json.loads(resp.read().decode("utf-8"))
+        tag = str(rel.get("tag_name") or "").strip()[:32]
+        if tag:
+            url = ""
+            for asset in rel.get("assets") or []:
+                if str(asset.get("name", "")).lower().endswith(".zip"):
+                    url = str(asset.get("browser_download_url") or "")
+                    break
+            base["latest"] = tag
+            base["has_update"] = bool(local and tag != local)
+            base["download_url"] = url or None
+            base["has_release"] = True
+            base["release_url"] = str(rel.get("html_url") or "https://github.com/YanZi50/-/releases")
+            return base
+    except Exception:
+        pass
+    # 2) 回退：version.txt 对比（无 zip 资产时只提示，不能自动下载）
+    try:
+        import base64
+        for url in (
+            "https://api.github.com/repos/YanZi50/-/contents/version.txt",
+            "https://raw.githubusercontent.com/YanZi50/-/master/version.txt",
+        ):
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "sppj-update-check/1.0"})
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    data = resp.read()
+                if url.startswith("https://api.github.com"):
+                    obj = json.loads(data.decode("utf-8"))
+                    raw = base64.b64decode(obj.get("content") or "").decode("utf-8-sig")
+                else:
+                    raw = data.decode("utf-8-sig")
+                remote = raw.strip()[:32] or None
+                if remote:
+                    base["latest"] = remote
+                    base["has_update"] = bool(local and remote != local)
+                break
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return base
 
 
 def _check_update_async() -> None:
@@ -1462,19 +1518,102 @@ def _check_update_async() -> None:
 
     def run() -> None:
         try:
-            remote = _fetch_remote_version()
-            local = _read_local_version()
-            has_update = bool(remote and local and remote != local)
-            STATE.update_info = {
-                "current": local,
-                "latest": remote or local,
-                "has_update": has_update,
-                "url": "https://github.com/YanZi50/-",
-            }
+            STATE.update_info = _fetch_update_info()
         except Exception:
             pass  # 静默失败：不影响任何现有功能
 
     threading.Thread(target=run, daemon=True).start()
+
+
+def _update_install_root() -> Path:
+    """更新解压/脚本落点：便携版（frozen）解压到程序目录下 _update_new；开发版解压到系统临时目录。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(tempfile.gettempdir())
+
+
+def _download_update_async(download_url: str) -> None:
+    """后台下载新版 zip → 解压到 _update_new → 生成《一键替换更新.bat》。失败置 failed 并给出原因。"""
+
+    def run() -> None:
+        import shutil
+        import zipfile
+        try:
+            STATE.update_download = {"stage": "downloading", "done": 0, "total": 0, "error": None}
+            root = _update_install_root()
+            dl_dir = root / "_update_tmp"
+            dl_dir.mkdir(parents=True, exist_ok=True)
+            zip_path = dl_dir / "sppj_update.zip"
+            # 流式下载（带进度）
+            req = urllib.request.Request(download_url, headers={"User-Agent": "sppj-update-check/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp, zip_path.open("wb") as f:
+                total = int(resp.headers.get("Content-Length") or 0)
+                STATE.update_download = {"stage": "downloading", "done": 0, "total": total, "error": None}
+                done = 0
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        STATE.update_download = {"stage": "downloading", "done": done, "total": total, "error": None}
+            if zip_path.stat().st_size == 0:
+                raise RuntimeError("下载的更新包为空")
+            # 解压到 _update_new（覆盖旧的）
+            new_dir = root / "_update_new"
+            if new_dir.exists():
+                shutil.rmtree(new_dir, ignore_errors=True)
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(new_dir)
+            # 便携版：zip 顶层可能是单个程序目录，把内容提升到 _update_new 根
+            if getattr(sys, "frozen", False):
+                subs = [p for p in new_dir.iterdir() if p.is_dir()] if new_dir.exists() else []
+                if len(subs) == 1 and not (new_dir / "信息流素材一键拼接.exe").exists():
+                    inner = subs[0]
+                    tmp2 = root / "_update_new2"
+                    if tmp2.exists():
+                        shutil.rmtree(tmp2, ignore_errors=True)
+                    inner.rename(tmp2)
+                    shutil.rmtree(new_dir, ignore_errors=True)
+                    tmp2.rename(new_dir)
+            # 生成一键替换脚本
+            if getattr(sys, "frozen", False):
+                _write_update_script(root, new_dir)
+            STATE.update_download = {"stage": "ready", "done": 0, "total": 0, "error": None}
+            try:
+                shutil.rmtree(dl_dir, ignore_errors=True)
+            except Exception:
+                pass
+        except Exception as exc:
+            STATE.update_download = {"stage": "failed", "done": 0, "total": 0, "error": str(exc)[:200]}
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _write_update_script(root: Path, new_dir: Path) -> None:
+    """生成《一键替换更新.bat》：关旧程序 → 只覆盖程序文件（保留用户数据目录）→ 重启。"""
+    exe_name = "信息流素材一键拼接.exe"
+    script = (
+        "@echo off\r\n"
+        "chcp 65001 >nul\r\n"
+        "setlocal\r\n"
+        f"set \"APP_DIR=%~dp0\"\r\n"
+        f"set \"NEW=%APP_DIR%_update_new\"\r\n"
+        f"echo 正在关闭旧版本程序...\r\n"
+        f"taskkill /IM \"{exe_name}\" /F >nul 2>&1\r\n"
+        "timeout /t 2 /nobreak >nul\r\n"
+        "echo 正在替换程序文件（保留历史/配置/日志等个人数据）...\r\n"
+        "robocopy \"%NEW%\" \"%APP_DIR%\" /E /IS /IT /XD history configs logs previews cache state _update_new _update_tmp >nul\r\n"
+        f"rmdir /s /q \"%NEW%\" >nul 2>&1\r\n"
+        f"echo 更新完成，正在启动...\r\n"
+        f"start \"\" \"%APP_DIR%{exe_name}\"\r\n"
+        "exit\r\n"
+    )
+    try:
+        (root / "一键替换更新.bat").write_text(script, encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _pick_free_port(start: int = 8765, tries: int = 30) -> int:
