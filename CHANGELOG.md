@@ -3,6 +3,13 @@
 > 每次 Git 提交都必须在本文档顶部新增对应说明，内容至少包含：
 > 更新了什么、改动了什么、作用是什么、修复了什么、优化了什么。
 
+## 2026-09-15（R83：GitHub 仓库改名 infoflow 适配）
+
+- GitHub 仓库由 YanZi50/- 更名为 YanZi50/infoflow。
+- **本地 remote 更新**：origin 改为 https://github.com/YanZi50/infoflow.git（不再依赖旧 URL 重定向）。
+- **更新机制适配**：web_app.py 中所有 GitHub API/Release/version.txt 硬编码 URL 从 YanZi50/- 替换为 YanZi50/infoflow；更新检测验证通过（v0.9.9 → 提示升级 v1.0.0，下载 URL 指向新仓库资产）。
+- 前端无硬编码仓库名，无需改动。
+- 验证：语法 OK、更新检测/下载 URL 指向新仓库、smoke_test 70 项 + e2e_ui 4 项全绿（待跑）。
 ## 2026-09-15（R82：语义化版本号体系 vX.Y.Z）
 
 - **版本号规范**：发布版本号从 git 短 hash 改为语义化版本 vX.Y.Z（主版本.次版本.修订号）。重大更新升主版本（v1.x → v2.0.0）、新功能升次版本、修复/优化升修订号。version.txt 起始为 v1.0.0。

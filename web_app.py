@@ -1504,11 +1504,11 @@ def _fetch_update_info() -> dict:
 
     local = _read_local_version()
     base = {"current": local, "latest": local, "has_update": False,
-            "url": "https://github.com/YanZi50/-", "download_url": None, "has_release": False}
+            "url": "https://github.com/YanZi50/infoflow", "download_url": None, "has_release": False}
     # 1) GitHub Releases API
     try:
         req = urllib.request.Request(
-            "https://api.github.com/repos/YanZi50/-/releases/latest",
+            "https://api.github.com/repos/YanZi50/infoflow/releases/latest",
             headers={"User-Agent": "sppj-update-check/1.0", "Accept": "application/vnd.github+json"},
         )
         with _url_opener().open(req, timeout=10) as resp:
@@ -1524,7 +1524,7 @@ def _fetch_update_info() -> dict:
             base["has_update"] = bool(local and _is_newer(tag, local))
             base["download_url"] = url or None
             base["has_release"] = True
-            base["release_url"] = str(rel.get("html_url") or "https://github.com/YanZi50/-/releases")
+            base["release_url"] = str(rel.get("html_url") or "https://github.com/YanZi50/infoflow/releases")
             return base
     except Exception:
         pass
@@ -1532,8 +1532,8 @@ def _fetch_update_info() -> dict:
     try:
         import base64
         for url in (
-            "https://api.github.com/repos/YanZi50/-/contents/version.txt",
-            "https://raw.githubusercontent.com/YanZi50/-/master/version.txt",
+            "https://api.github.com/repos/YanZi50/infoflow/contents/version.txt",
+            "https://raw.githubusercontent.com/YanZi50/infoflow/master/version.txt",
         ):
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": "sppj-update-check/1.0"})
