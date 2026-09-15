@@ -1542,7 +1542,9 @@ def fingerprint_video(path: str, frames: int = 3) -> Optional[np.ndarray]:
                 "-f", "rawvideo", "-pix_fmt", "gray", "-s", "9x8",
                 str(raw),
             ]
-            subprocess.run(args, capture_output=True, timeout=30)
+            # 隐藏窗口：便携版下避免查重抽帧弹出黑窗
+            subprocess.run(args, capture_output=True, timeout=30,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             if raw.exists() and raw.stat().st_size == 72:  # 9*8
                 data = np.frombuffer(raw.read_bytes(), dtype=np.uint8).reshape(8, 9)
                 bits.append(_frame_dhash(data))

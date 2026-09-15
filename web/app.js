@@ -16,6 +16,7 @@ const state = reactive({
   healthChecking: false,
   previewTrans: 'fade',
   similarPairs: [],   // 本次任务输出疑似重复对（感知哈希查重）
+  deduping: false,    // 产物查重进行中（异步，后台比对中）
   simPage: 1,         // 疑似重复列表当前页（每页 5 条）
   queue: [],          // 待执行任务队列
   queueLabel: '',
@@ -774,6 +775,7 @@ async function startJob() {
   }
   state.stepErrors[1] = false;
   state.similarPairs = [];  // 新任务开始，清空上次任务的疑似重复提示
+  state.deduping = false;
   state.simPage = 1;
   // 开始前全局体检（每次实时检查，避免素材改动后状态过期）：有阻断问题则不启动
   await precheck();
@@ -907,6 +909,7 @@ async function poll() {
     state.job.logs = s.logs || [];
     state.job.success_items = s.success_items || [];
     state.job.failed_items = s.failed_items || [];
+    state.deduping = !!s.deduping;
     // 版本更新检查（失败静默，不打扰）
     if (!state.updateInfo) {
       try {

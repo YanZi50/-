@@ -207,6 +207,7 @@ class AppState:
         self.samples: list[tuple[float, int]] = []
         self.interrupted: dict | None = None
         self.similar_pairs: list[dict] = []  # 本次任务输出疑似重复对
+        self.deduping: bool = False          # 产物查重是否进行中（异步，生成完成即返回，查重后台跑）
         self.last_speed: float | None = None  # 最近一次任务实测速度（条/秒，含并发）
         self.queue: list[dict] = []          # 待执行队列 [{id, label, payload}]
         self.queue_seq: int = 0
@@ -279,6 +280,7 @@ class AppState:
                 "failed": self.result.failed if self.result else 0,
                 "unfinished": max(0, self.total - (self.result.success + self.result.skipped + self.result.failed)) if self.result else 0,
                 "cancelled": self.result.cancelled if self.result else False,
+                "deduping": self.deduping,
                 "failed_items": self.result.failed_items if self.result else [],
                 "success_items": _with_sizes(self.result.success_items) if self.result else [],
                 "error": self.error,
@@ -425,6 +427,29 @@ def _safe_int(value, default: int, lo: int | None = None, hi: int | None = None)
     return v
 
 
+def _run_dedupe_async(out_paths: list[str]) -> None:
+    """后台查重：生成完成后静默比对产物相似度，完成后推送结果与日志。
+    注意：线程内已在 STATE.lock 保护下直接操作 logs（不能再调 add_log 嵌套加锁，会死锁）。"""
+    STATE.deduping = True
+    try:
+        pairs = find_similar_outputs(out_paths)
+        with STATE.lock:
+            if not STATE.deduping:
+                return  # 期间启动了新任务（状态被复位），放弃旧批次查重结果
+            STATE.similar_pairs = pairs
+            STATE.logs.append(f"查重完成：发现 {len(pairs)} 对疑似重复输出" if pairs else "查重完成：未发现疑似重复")
+            STATE.logs = STATE.logs[-1000:]
+    except Exception as exc:  # noqa: BLE001
+        with STATE.lock:
+            if not STATE.deduping:
+                return
+            STATE.similar_pairs = []
+            STATE.logs.append(f"产物查重失败：{exc}")
+            STATE.logs = STATE.logs[-1000:]
+    finally:
+        STATE.deduping = False
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # noqa: ANN001
         return
@@ -555,6 +580,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/status":
             self._send_json(STATE.status_dict())
+            return
+        if route == "/api/ping":
+            self._send_json({"ok": True})
             return
         if route == "/api/update":
             self._send_json(STATE.update_info or {"has_update": False})
@@ -995,18 +1023,12 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 STATE.result = result
                 STATE.last_failed_items = list(result.failed_items)
-                # 产物感知哈希查重：本批输出两两比对，疑似重复对告警
-                try:
-                    if result.success and not result.cancelled:
-                        out_paths = [it.get("output") for it in result.success_items if it.get("output")]
-                        STATE.similar_pairs = find_similar_outputs(out_paths)
-                        if STATE.similar_pairs:
-                            STATE.add_log(f"查重：发现 {len(STATE.similar_pairs)} 对疑似重复输出")
-                    else:
-                        STATE.similar_pairs = []
-                except Exception as exc:
-                    STATE.similar_pairs = []
-                    STATE.add_log(f"产物查重失败：{exc}")
+                # 产物感知哈希查重：改为后台异步，生成完成立即返回，查重结果稍后推送到页面
+                STATE.similar_pairs = []
+                if result.success and not result.cancelled:
+                    out_paths = [it.get("output") for it in result.success_items if it.get("output")]
+                    if out_paths:
+                        threading.Thread(target=_run_dedupe_async, args=(out_paths,), daemon=True).start()
                 record = {
                     "type": m,
                     "config": asdict(cfg),
@@ -1069,6 +1091,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": config})
             return
         STATE.similar_pairs = []  # 新任务开始，清除上次任务的疑似重复提示
+        STATE.deduping = False    # 复位查重状态（旧查重线程发现被复位会放弃写入）
         register_allowed_dir(config.output_folder)
         total = self._actual_total(config)
         self._run_task(config, "任务", "batch")
@@ -1421,6 +1444,19 @@ def _pick_free_port(start: int = 8765, tries: int = 30) -> int:
     return start
 
 
+def _open_browser_when_ready(url: str) -> None:
+    """HTTP 服务就绪后才打开浏览器，避免便携版解包期间先弹出"无法访问此网页"。"""
+    import urllib.request
+
+    for _ in range(120):  # 最多等 60 秒
+        try:
+            with urllib.request.urlopen(url + "/api/ping", timeout=0.5):
+                __import__("webbrowser").open(url)
+                return
+        except Exception:
+            time.sleep(0.5)
+
+
 def main() -> None:
     register_standard_dirs()
     global PORT
@@ -1434,8 +1470,8 @@ def main() -> None:
     url = f"http://{HOST}:{PORT}"
     print(f"网页版已启动：{url}")
     if getattr(sys, "frozen", False):
-        # 便携版：启动后自动打开默认浏览器
-        threading.Timer(1.0, lambda: __import__("webbrowser").open(url)).start()
+        # 便携版：等服务就绪后自动打开默认浏览器（不再固定 1 秒）
+        threading.Thread(target=_open_browser_when_ready, args=(url,), daemon=True).start()
     _check_update_async()  # 版本更新静默检查（失败不影响使用）
     try:
         server.serve_forever()
